@@ -1,37 +1,37 @@
 {
-  "team_id": "your-team-id",
-  "domain": "coding_assistants",
-  "language_scope": ["en"],
-  "african_alpha_claim": false,
+  "team_id": "REPLACE_WITH_YOUR_TEAM_ID",
+  "domain": "healthcare_medical",
+  "language_scope": ["en", "yo", "ha", "ig"],
+  "african_alpha_claim": true,
   "budget_laptop_claim": true,
   "submitter": {
-    "name": "your-name",
-    "email": "your-email@domain.com",
-    "github_handle": "your-github"
+    "name": "David Agbolade",
+    "email": "dagbolade72@gmail.com",
+    "github_handle": "dagbolade"
   },
   "cross_disciplinary_pairing": {
-    "discipline": "education",
+    "discipline": "healthcare",
     "load_bearing": true,
-    "description": "Brief description of how your model serves a real-world domain."
+    "description": "A quantized LLM interprets outputs from a trained MobileNetV3-Small chest X-ray screening model (AUC 0.93), generating clinical explanations, triage recommendations, and patient education in English, Yoruba, Hausa, and Igbo. The LLM requires the vision model output to produce its clinical interpretation — the integration is structurally load-bearing."
   },
   "test_prompts": [
     {
       "prompt_id": "tp_001",
-      "prompt": "Write a Python function that reads a CSV file and returns the column with the highest mean value."
+      "prompt": "A chest X-ray screening result shows a TB probability of 78.3%. The patient is a 34-year-old male presenting with a persistent cough for 3 weeks. Explain the screening result to a community health worker, recommend next steps for triage, and provide a brief patient-friendly explanation."
     },
     {
       "prompt_id": "tp_002",
-      "prompt": "Explain the difference between a list and a tuple in Python, and give one example where each is the better choice."
+      "prompt": "A community health worker asks: What are the key differences between active TB and latent TB infection? How should each be managed at a primary health centre with limited diagnostic equipment? Include guidance on when to refer to a higher-level facility."
     }
   ],
   "model": {
-    "name": "SmolLM2-135M-Instruct-Q4_K_M",
+    "name": "REPLACE_MODEL_NAME_GGUF",
     "runtime": "llama.cpp",
     "quantization": "GGUF Q4_K_M",
-    "parameters_estimate": "135M",
+    "parameters_estimate": "REPLACE_e.g._2.6B",
     "packaging": "binary_bundle"
   },
   "_runtime": {
-    "model_path": "model/SmolLM2-135M-Instruct-Q4_K_M.gguf"
+    "model_path": "model/REPLACE_MODEL_FILENAME.gguf"
   }
 }

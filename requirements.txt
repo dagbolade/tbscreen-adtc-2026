@@ -1,0 +1,11 @@
+# Vision model
+onnxruntime>=1.16.0
+opencv-python-headless>=4.8.0
+numpy>=1.24.0
+Pillow>=10.0.0
+
+# LLM (Raqib to confirm version)
+llama-cpp-python>=0.2.0
+
+# Web interface
+flask>=3.0.0
