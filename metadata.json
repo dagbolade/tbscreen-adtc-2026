@@ -10,9 +10,9 @@
     "github_handle": "dagbolade"
   },
   "cross_disciplinary_pairing": {
-    "discipline": "healthcare",
+    "discipline": "computer_vision",
     "load_bearing": true,
-    "description": "A quantized LLM interprets outputs from a trained MobileNetV3-Small chest X-ray screening model (AUC 0.93), generating clinical explanations, triage recommendations, and patient education in English, Yoruba, Hausa, and Igbo. The LLM requires the vision model output to produce its clinical interpretation — the integration is structurally load-bearing."
+    "description": "A quantized LLM interprets outputs from a trained MobileNetV3-Small chest X-ray TB screening model (AUC 0.93). The LLM generates clinical explanations, triage recommendations, and patient education grounded in WHO TB guidelines via offline RAG. The LLM requires the vision model output to produce its interpretation — the integration is structurally load-bearing."
   },
   "test_prompts": [
     {
@@ -21,17 +21,17 @@
     },
     {
       "prompt_id": "tp_002",
-      "prompt": "A community health worker asks: What are the key differences between active TB and latent TB infection? How should each be managed at a primary health centre with limited diagnostic equipment? Include guidance on when to refer to a higher-level facility."
+      "prompt": "A community health worker in a rural clinic asks: What are the key differences between a positive TB screening result and a confirmed TB diagnosis? How should each be managed at a primary health centre with limited diagnostic equipment? Include guidance on when to refer to a higher-level facility."
     }
   ],
   "model": {
-    "name": "REPLACE_MODEL_NAME_GGUF",
+    "name": "gemma-4-E2B-it-Q4_K_M",
     "runtime": "llama.cpp",
     "quantization": "GGUF Q4_K_M",
-    "parameters_estimate": "REPLACE_e.g._2.6B",
+    "parameters_estimate": "2.6B",
     "packaging": "binary_bundle"
   },
   "_runtime": {
-    "model_path": "model/REPLACE_MODEL_FILENAME.gguf"
+    "model_path": "model/gemma-4-E2B-it-Q4_K_M.gguf"
   }
 }

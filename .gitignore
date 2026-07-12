@@ -2,15 +2,18 @@
 model/*.gguf
 model/*.bin
 model/*.safetensors
+!model/.gitkeep
+*.gguf
 
 # macOS
 .DS_Store
 
-# Python
-__pycache__/
-*.pyc
-.venv/
-*.egg-info/
+# llms
+CLAUDE.md
+.claude/
+
+# docs
+docs/
 
 # Local profiler output
 submission.json
@@ -18,3 +21,46 @@ audit.json
 
 # Uploaded X-ray images (user data)
 uploads/
+
+# Built artifacts / caches
+corpus/index/
+data/cache/
+__pycache__/
+*.egg-info/
+*.pyc
+.venv/
+.DS_Store
+dist/
+build/
+package-lock.json
+
+# Node
+node_modules/
+
+# .vscode
+.vscode/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+config/
+
+# OS
+.DS_Store
+
+# Logs
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.python-cache/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# uv
+.uv/
