@@ -23,14 +23,12 @@ os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 
 # Global assistant instance, lazy loaded
 assistant: TBScreenAssistant | None = None
-last_uploaded_file: str | None = None
 
 
 def get_assistant() -> TBScreenAssistant:
     """Lazy initialize the assistant to conserve resources until request."""
     global assistant
     if assistant is None:
-        # Development blob path; will search model/ folder by default if env not set
         assistant = TBScreenAssistant()
     return assistant
 
@@ -44,7 +42,6 @@ HTML_TEMPLATE = """
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TBScreen — Offline Clinical TB Assistant</title>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
             --bg-color: #080B11;
@@ -69,7 +66,7 @@ HTML_TEMPLATE = """
         }
 
         body {
-            font-family: 'Outfit', sans-serif;
+            font-family: "Avenir Next", "Segoe UI", "Helvetica Neue", sans-serif;
             background-color: var(--bg-color);
             color: var(--text-primary);
             min-height: 100vh;
@@ -895,25 +892,21 @@ def home():
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
-    global last_uploaded_file
     if "file" not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
-    
+
     file = request.files["file"]
     if file.filename == "":
         return jsonify({"error": "Empty filename"}), 400
 
-    # Save to unique filename
     ext = os.path.splitext(file.filename)[1]
     filename = f"{uuid.uuid4()}{ext}"
     filepath = os.path.join(app.config["UPLOAD_FOLDER"], filename)
     file.save(filepath)
-    last_uploaded_file = filepath
 
     lang = request.form.get("lang", "English")
 
     try:
-        # Load assistant lazily
         assist = get_assistant()
         result = assist.process_image(filepath, lang=lang)
         return jsonify(result)
@@ -923,16 +916,32 @@ def analyze():
 
 @app.route("/translate", methods=["POST"])
 def translate():
-    global last_uploaded_file
-    if not last_uploaded_file or not os.path.exists(last_uploaded_file):
-        return jsonify({"error": "No active patient file to translate"}), 400
-
+    """Re-interpret cached vision result in a new language — skips ONNX."""
     data = request.get_json() or {}
     lang = data.get("lang", "English")
 
     try:
         assist = get_assistant()
-        result = assist.process_image(last_uploaded_file, lang=lang)
+        result = assist.reinterpret(lang=lang)
+        return jsonify(result)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/ask", methods=["POST"])
+def ask():
+    """Grounded clinical Q&A (matches metadata.json test-prompt style)."""
+    data = request.get_json() or {}
+    question = (data.get("question") or "").strip()
+    lang = data.get("lang", "English")
+    if not question:
+        return jsonify({"error": "question is required"}), 400
+
+    try:
+        assist = get_assistant()
+        result = assist.ask(question, lang=lang)
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": str(e)}), 500

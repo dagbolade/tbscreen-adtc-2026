@@ -1,5 +1,5 @@
 {
-  "team_id": "REPLACE_WITH_YOUR_TEAM_ID",
+  "team_id": "raqib-dagbolade-tbscreen",
   "domain": "healthcare_medical",
   "language_scope": ["en", "yo", "ha", "ig"],
   "african_alpha_claim": true,
@@ -12,7 +12,7 @@
   "cross_disciplinary_pairing": {
     "discipline": "computer_vision",
     "load_bearing": true,
-    "description": "A quantized LLM interprets outputs from a trained MobileNetV3-Small chest X-ray TB screening model (AUC 0.93). The LLM generates clinical explanations, triage recommendations, and patient education grounded in WHO TB guidelines via offline RAG. The LLM requires the vision model output to produce its interpretation — the integration is structurally load-bearing."
+    "description": "A quantized LLM interprets outputs from a trained MobileNetV3-Small chest X-ray TB screening model (AUC 0.93), including occlusion-based zone activations. The LLM generates clinical explanations, triage recommendations, and patient education grounded in WHO TB guidelines via offline TF-IDF RAG. The LLM requires the vision model output to produce its interpretation — the integration is structurally load-bearing. A separate grounded Q&A path serves guideline questions without an image."
   },
   "test_prompts": [
     {

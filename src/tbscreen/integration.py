@@ -22,31 +22,30 @@ class TBScreenAssistant:
         vision_model_path: str | None = None,
         corpus_path: str | None = None,
     ):
-        # Default paths
         here = os.path.dirname(__file__)
         if corpus_path is None:
             corpus_path = os.path.join(here, "..", "..", "corpus", "sources", "who_tb_guidelines.jsonl")
-        
-        # Load the ONNX vision model
+
         self.vision_model = TBScreenModel(model_path=vision_model_path)
-        
-        # Load the RAG database/retriever
+
         if os.path.exists(corpus_path):
             self.retriever = Retriever.from_jsonl(corpus_path)
         else:
-            # Fallback to test fixtures if main corpus doesn't exist
             fixture_path = os.path.join(here, "..", "..", "tests", "fixture_corpus.jsonl")
             self.retriever = Retriever.from_jsonl(fixture_path)
-            
-        # Keep track of model path to lazy-load Llama context
+
         self.llm_model_path = llm_model_path
         self._llm: Llama | None = None
+        # Cache last vision result so language switches skip ONNX re-inference.
+        self._last_vision_result: dict[str, Any] | None = None
+        self._last_image_path: str | None = None
 
     @property
     def llm(self) -> Llama:
         """Lazy load LLM context to preserve memory until needed."""
         if self._llm is None:
             from . import llm
+
             if self.llm_model_path:
                 self._llm = llm.load(model_path=self.llm_model_path)
             else:
@@ -54,16 +53,40 @@ class TBScreenAssistant:
         return self._llm
 
     def process_image(self, image_path: str, lang: str = "English") -> dict[str, Any]:
-        """Screen a chest X-ray and interpret the results with the LLM and WHO RAG context."""
-        # 1. Run vision screening
-        vision_result = self.vision_model.predict(image_path)
-        
-        # 2. Run LLM interpretation grounded in WHO TB guidelines
-        result = pipeline.screen_and_interpret(
+        """Screen a chest X-ray and interpret with WHO RAG context."""
+        if self._last_image_path == image_path and self._last_vision_result is not None:
+            vision_result = self._last_vision_result
+        else:
+            vision_result = self.vision_model.predict(image_path)
+            self._last_image_path = image_path
+            self._last_vision_result = vision_result
+
+        return pipeline.screen_and_interpret(
             model=self.llm,
             retriever=self.retriever,
             vision_result=vision_result,
             lang=lang,
-            k=3  # Retrieve top 3 relevant passages
+            k=3,
         )
-        return result
+
+    def reinterpret(self, lang: str = "English") -> dict[str, Any]:
+        """Re-run LLM+RAG on the cached vision result (language toggle)."""
+        if self._last_vision_result is None:
+            raise ValueError("No cached vision result — analyze an image first")
+        return pipeline.screen_and_interpret(
+            model=self.llm,
+            retriever=self.retriever,
+            vision_result=self._last_vision_result,
+            lang=lang,
+            k=3,
+        )
+
+    def ask(self, question: str, lang: str = "English") -> dict[str, Any]:
+        """Grounded clinical Q&A without vision (metadata test-prompt path)."""
+        return pipeline.answer_clinical_question(
+            model=self.llm,
+            retriever=self.retriever,
+            question=question,
+            lang=lang,
+            k=4,
+        )

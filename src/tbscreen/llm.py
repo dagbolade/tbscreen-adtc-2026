@@ -17,7 +17,7 @@ DEFAULT_MODEL = os.environ.get(
 )
 
 
-def load(model_path: str = DEFAULT_MODEL, n_ctx: int = 4096, n_threads: int | None = None) -> Llama:
+def load(model_path: str = DEFAULT_MODEL, n_ctx: int = 2048, n_threads: int | None = None) -> Llama:
     """Load the GGUF model. n_gpu_layers=0 mirrors the ADTC target (no discrete GPU)."""
     return Llama(model_path=model_path, n_ctx=n_ctx, n_gpu_layers=0, n_threads=n_threads, verbose=False)
 
@@ -48,3 +48,18 @@ def interpret(
     raw = _generate(llm, prompt, max_tokens, temperature=0.2)
     parsed = core.parse_yaml(raw)
     return core.sanitize_interpretation(parsed, risk_level, triage, valid_sources=valid_sources)
+
+
+def answer_question(
+    llm: Llama,
+    question: str,
+    context: str,
+    lang: str = "English",
+    valid_sources: Iterable[str] | None = None,
+    max_tokens: int = 600,
+) -> dict[str, Any] | None:
+    """Generate a RAG-grounded clinical Q&A response (no vision input)."""
+    prompt = core.qa_user_content(question, context, lang)
+    raw = _generate(llm, prompt, max_tokens, temperature=0.2)
+    parsed = core.parse_yaml(raw)
+    return core.sanitize_qa(parsed, valid_sources=valid_sources)

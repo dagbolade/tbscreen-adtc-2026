@@ -46,6 +46,7 @@ CRITICAL RULES:
 - This is decision SUPPORT, not diagnosis. Always include a disclaimer.
 - NEVER state clinical facts not supported by the reference passages.
 - Every clinical claim must cite a source id from the references.
+- If zone activations are provided, briefly note which lung region contributed most to the score. Do not invent precise anatomical findings beyond the zone labels.
 
 Reply in {lang}. Output YAML only. No markdown fences, no prose, no explanations.
 Top-level keys must be exactly: interpretation, recommendation, education, cautions, sources.
@@ -79,12 +80,20 @@ def build_screening_summary(vision_result: dict[str, Any]) -> str:
     prob = vision_result.get("tb_probability", 0.0)
     result = vision_result.get("screening_result", "UNKNOWN")
     risk, triage = classify_risk(prob)
-    return (
-        f"TB probability: {prob:.1%}\n"
-        f"Screening result: {result}\n"
-        f"Risk level: {risk}\n"
-        f"Recommended triage: {triage}"
-    )
+    lines = [
+        f"TB probability: {prob:.1%}",
+        f"Screening result: {result}",
+        f"Risk level: {risk}",
+        f"Recommended triage: {triage}",
+    ]
+    zones = vision_result.get("zone_activations")
+    if isinstance(zones, dict) and zones:
+        zone_str = ", ".join(f"{k}={v:.0%}" for k, v in zones.items())
+        lines.append(f"Zone activations (occlusion sensitivity): {zone_str}")
+        dominant = vision_result.get("dominant_zone")
+        if dominant:
+            lines.append(f"Dominant zone: {dominant}")
+    return "\n".join(lines)
 
 
 def interpret_user_content(
@@ -98,6 +107,73 @@ def interpret_user_content(
         context=context,
         screening_summary=screening_summary,
     )
+
+
+QA_INSTRUCTION = """You are a clinical decision-support assistant for TB care in resource-limited settings. Answer the health worker's question using ONLY the reference passages below.
+
+CRITICAL RULES:
+- This is decision SUPPORT, not diagnosis. Always include a disclaimer.
+- NEVER state clinical facts not supported by the reference passages.
+- Every clinical claim must cite a source id from the references.
+
+Reply in {lang}. Output YAML only. No markdown fences, no prose, no explanations.
+Top-level keys must be exactly: answer, recommendation, education, cautions, sources.
+- answer: 2-4 sentences answering the question for a community health worker.
+- recommendation: specific next steps the health worker can take now.
+- education: a list of 2-3 simple points suitable to share with a patient or caregiver.
+- cautions: a list of safety warnings (always include that this is decision support, not a diagnosis).
+- sources: a list of reference passage ids that support the answer.
+
+Format exactly like this (each field on its own line):
+answer: <2-4 sentences>
+recommendation: <next steps>
+education:
+  - <point 1>
+  - <point 2>
+cautions:
+  - <warning 1>
+  - <warning 2>
+sources:
+  - <passage id>
+
+Reference passages:
+{context}
+
+Question:
+{question}"""
+
+
+def qa_user_content(question: str, context: str, lang: str = "English") -> str:
+    """Build the full user prompt for grounded clinical Q&A."""
+    return QA_INSTRUCTION.format(lang=lang, context=context, question=question)
+
+
+def sanitize_qa(
+    obj: Any,
+    valid_sources: Iterable[str] | None = None,
+) -> dict[str, Any] | None:
+    """Sanitize clinical Q&A YAML; drop fabricated source ids."""
+    if not isinstance(obj, dict):
+        return None
+
+    allowed = set(valid_sources) if valid_sources is not None else None
+    raw_sources = _str_list(obj.get("sources"))
+    sources = [s for s in raw_sources if s in allowed] if allowed is not None else raw_sources
+
+    cautions = _str_list(obj.get("cautions"))
+    has_disclaimer = any("screening" in c.lower() or "diagnosis" in c.lower() or "decision support" in c.lower() for c in cautions)
+    if not has_disclaimer:
+        cautions.append(
+            "This is AI decision support, not a definitive diagnosis. Confirmatory testing and clinician judgment are required."
+        )
+
+    return {
+        "answer": str(obj.get("answer", "")).strip(),
+        "recommendation": str(obj.get("recommendation", "")).strip(),
+        "education": _str_list(obj.get("education")),
+        "cautions": cautions,
+        "sources": sources,
+    }
 
 
 # --- YAML cleaning and parsing (proven infrastructure from prior work) ---

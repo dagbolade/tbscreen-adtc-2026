@@ -23,7 +23,6 @@ audit.json
 uploads/
 
 # Built artifacts / caches
-corpus/index/
 data/cache/
 __pycache__/
 *.egg-info/

@@ -19,6 +19,7 @@ def _retrieval_query(vision_result: dict[str, Any]) -> str:
         f"{risk} risk",
         f"triage {triage}",
         vision_result.get("screening_result", ""),
+        vision_result.get("dominant_zone", ""),
     ]
     return " ".join(p for p in parts if p)
 
@@ -31,12 +32,10 @@ def screen_and_interpret(
     k: int = 4,
 ) -> dict[str, Any]:
     """Full turn: vision result → retrieve WHO guidelines → grounded clinical interpretation."""
-    # Step 1: retrieve relevant WHO TB guideline passages
     query = _retrieval_query(vision_result)
     hits = retriever.retrieve(query, lang=lang, k=k)
     context = Retriever.as_context(hits)
 
-    # Step 2: generate grounded clinical interpretation
     interpretation = llm.interpret(
         model,
         vision_result,
@@ -50,5 +49,29 @@ def screen_and_interpret(
         "risk_level": interpretation["risk_level"] if interpretation else "unknown",
         "triage": interpretation["triage"] if interpretation else "unknown",
         "interpretation": interpretation,
+        "retrieved_sources": [h["id"] for h in hits],
+    }
+
+
+def answer_clinical_question(
+    model: Llama,
+    retriever: Retriever,
+    question: str,
+    lang: str = "English",
+    k: int = 4,
+) -> dict[str, Any]:
+    """Text clinical Q&A path used by metadata test prompts and the /ask UI."""
+    hits = retriever.retrieve(question, lang=lang, k=k)
+    context = Retriever.as_context(hits)
+    answer = llm.answer_question(
+        model,
+        question,
+        context,
+        lang=lang,
+        valid_sources=[h["id"] for h in hits],
+    )
+    return {
+        "question": question,
+        "answer": answer,
         "retrieved_sources": [h["id"] for h in hits],
     }
