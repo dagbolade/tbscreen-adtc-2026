@@ -36,9 +36,9 @@ class TBScreenAssistant:
 
         self.llm_model_path = llm_model_path
         self._llm: Llama | None = None
-        # Cache last vision result so language switches skip ONNX re-inference.
         self._last_vision_result: dict[str, Any] | None = None
         self._last_image_path: str | None = None
+        self._last_patient_context: dict[str, Any] | None = None
 
     @property
     def llm(self) -> Llama:
@@ -52,14 +52,29 @@ class TBScreenAssistant:
                 self._llm = llm.load()
         return self._llm
 
-    def process_image(self, image_path: str, lang: str = "English") -> dict[str, Any]:
+    def clear_session(self) -> None:
+        """Drop cached vision/patient state so sessions cannot leak results."""
+        self._last_vision_result = None
+        self._last_image_path = None
+        self._last_patient_context = None
+
+    def process_image(
+        self,
+        image_path: str,
+        lang: str = "English",
+        patient_context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Screen a chest X-ray and interpret with WHO RAG context."""
         if self._last_image_path == image_path and self._last_vision_result is not None:
             vision_result = self._last_vision_result
         else:
-            vision_result = self.vision_model.predict(image_path)
+            # UI path skips occlusion zones (faster; avoids oversized prompts).
+            vision_result = self.vision_model.predict(image_path, with_zones=False)
             self._last_image_path = image_path
             self._last_vision_result = vision_result
+
+        if patient_context is not None:
+            self._last_patient_context = dict(patient_context)
 
         return pipeline.screen_and_interpret(
             model=self.llm,
@@ -67,6 +82,7 @@ class TBScreenAssistant:
             vision_result=vision_result,
             lang=lang,
             k=3,
+            patient_context=self._last_patient_context,
         )
 
     def reinterpret(self, lang: str = "English") -> dict[str, Any]:
@@ -79,6 +95,7 @@ class TBScreenAssistant:
             vision_result=self._last_vision_result,
             lang=lang,
             k=3,
+            patient_context=self._last_patient_context,
         )
 
     def ask(self, question: str, lang: str = "English") -> dict[str, Any]:

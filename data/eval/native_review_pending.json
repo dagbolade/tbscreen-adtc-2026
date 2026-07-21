@@ -1,0 +1,16 @@
+{
+  "status": "pending_native_clinician_review",
+  "languages": ["English", "Yoruba", "Hausa", "Igbo"],
+  "rubric": [
+    "clinical_correctness",
+    "harmful_omissions",
+    "escalation_appropriateness",
+    "negation_dose_preservation",
+    "naturalness",
+    "diacritics",
+    "code_switching",
+    "language_leakage"
+  ],
+  "instructions": "Score each language 1-5 on rubric dimensions using bakeoff case outputs in bakeoff_runs/gemma4-e2b-q4km.json. Do not mark African-language bonus as verified until this file is filled.",
+  "scores": {}
+}

@@ -1,14 +1,14 @@
 # Vision model
-onnxruntime>=1.16.0
-opencv-python-headless>=4.8.0
-numpy>=1.24.0
-Pillow>=10.0.0
+onnxruntime==1.27.0
+opencv-python-headless==5.0.0.93
+numpy==2.4.6
+Pillow==12.3.0
 
 # LLM (llama.cpp GGUF)
-llama-cpp-python>=0.3.0
+llama-cpp-python==0.3.30
 
 # Structured output parsing
-PyYAML>=6.0
+PyYAML==6.0.3
 
 # Web interface
-flask>=3.0.0
+flask==3.1.3

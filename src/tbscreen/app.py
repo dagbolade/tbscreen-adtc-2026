@@ -1,885 +1,358 @@
 #!/usr/bin/env python3
-"""Local Flask web application serving a premium, responsive, glassmorphic clinical dashboard."""
+"""Local Flask clinical dashboard — image screening + grounded Q&A, 100% offline."""
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
+import traceback
 import uuid
+from logging.handlers import RotatingFileHandler
 from typing import Any
 
 from flask import Flask, jsonify, request, render_template_string
+from PIL import Image
 
-# Ensure src/ is in python path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_SRC = os.path.abspath(os.path.join(_HERE, ".."))
+_ROOT = os.path.abspath(os.path.join(_HERE, "..", ".."))
+for _p in (_ROOT, _SRC):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
-from tbscreen import TBScreenAssistant
+from tbscreen import TBScreenAssistant  # noqa: E402
+
+LOG_DIR = os.path.join(_ROOT, "logs")
+os.makedirs(LOG_DIR, exist_ok=True)
+
+
+def _setup_logging() -> logging.Logger:
+    """Write Flask + app logs to logs/tbscreen.log (and stderr)."""
+    logger = logging.getLogger("tbscreen")
+    if logger.handlers:
+        return logger
+    logger.setLevel(logging.INFO)
+    fmt = logging.Formatter("%(asctime)s %(levelname)s [%(name)s] %(message)s")
+    fh = RotatingFileHandler(
+        os.path.join(LOG_DIR, "tbscreen.log"),
+        maxBytes=2_000_000,
+        backupCount=3,
+        encoding="utf-8",
+    )
+    fh.setFormatter(fmt)
+    sh = logging.StreamHandler()
+    sh.setFormatter(fmt)
+    logger.addHandler(fh)
+    logger.addHandler(sh)
+
+    # Capture werkzeug access + Flask request logs in the same file.
+    for name in ("werkzeug", "tbscreen.llm", "tbscreen.app"):
+        w = logging.getLogger(name)
+        w.setLevel(logging.INFO)
+        w.addHandler(fh)
+        w.propagate = False
+        w.addHandler(sh)
+    return logger
+
+
+log = _setup_logging()
 
 app = Flask(__name__)
-app.config["UPLOAD_FOLDER"] = os.path.join(os.path.dirname(__file__), "..", "..", "uploads")
-app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB
+app.config["UPLOAD_FOLDER"] = os.path.join(_ROOT, "uploads")
+app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
+ALLOWED_EXT = {".png", ".jpg", ".jpeg"}
 
 os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 
-# Global assistant instance, lazy loaded
 assistant: TBScreenAssistant | None = None
+_assistant_lock = __import__("threading").Lock()
 
 
 def get_assistant() -> TBScreenAssistant:
-    """Lazy initialize the assistant to conserve resources until request."""
+    """Lazy-init assistant so cold start stays light until first request."""
     global assistant
-    if assistant is None:
-        assistant = TBScreenAssistant()
-    return assistant
+    with _assistant_lock:
+        if assistant is None:
+            log.info("Initializing TBScreenAssistant (ONNX + RAG + GGUF)")
+            assistant = TBScreenAssistant()
+        return assistant
 
 
-# --- HTML Template ---
+def _parse_patient_context(form_or_json: Any) -> dict[str, Any]:
+    """Collect only the minimal fields required by the WHO-aligned safety policy."""
+    src = form_or_json or {}
+    ctx: dict[str, Any] = {}
 
-HTML_TEMPLATE = """
+    def _num(key: str) -> float | None:
+        raw = src.get(key)
+        if raw is None or raw == "":
+            return None
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return None
+
+    def _bool(key: str) -> bool | None:
+        raw = src.get(key)
+        if raw is None or raw == "":
+            return None
+        if isinstance(raw, bool):
+            return raw
+        return str(raw).lower() in {"1", "true", "yes", "on"}
+
+    age = _num("age_years")
+    if age is not None:
+        ctx["age_years"] = age
+    cough = _num("cough_weeks")
+    if cough is not None:
+        ctx["cough_weeks"] = cough
+    for key in ("has_tb_symptoms", "hiv_positive", "household_contact"):
+        val = _bool(key)
+        if val is not None:
+            ctx[key] = val
+    return ctx
+
+
+def _validate_image(path: str) -> None:
+    """Reject non-image uploads before ONNX inference."""
+    with Image.open(path) as img:
+        img.verify()
+    with Image.open(path) as img:
+        img.load()
+
+
+HTML_TEMPLATE = r"""
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TBScreen — Offline Clinical TB Assistant</title>
-    <style>
-        :root {
-            --bg-color: #080B11;
-            --card-bg: rgba(17, 22, 34, 0.75);
-            --border-color: rgba(255, 255, 255, 0.08);
-            --text-primary: #F3F4F6;
-            --text-secondary: #9CA3AF;
-            
-            /* Curated HSL colors */
-            --color-primary: hsl(210, 100%, 60%);     /* Electric Blue */
-            --color-success: hsl(142, 70%, 45%);     /* Healing Green */
-            --color-warning: hsl(38, 92%, 50%);      /* Amber Alert */
-            --color-danger: hsl(4, 90%, 58%);        /* Crimson Red */
-            
-            --shadow-glow: 0 0 25px rgba(59, 130, 246, 0.15);
-        }
-
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-
-        body {
-            font-family: "Avenir Next", "Segoe UI", "Helvetica Neue", sans-serif;
-            background-color: var(--bg-color);
-            color: var(--text-primary);
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            overflow-x: hidden;
-            background-image: 
-                radial-gradient(circle at 10% 20%, rgba(59, 130, 246, 0.05) 0%, transparent 40%),
-                radial-gradient(circle at 90% 80%, rgba(16, 185, 129, 0.04) 0%, transparent 40%);
-        }
-
-        header {
-            padding: 1.5rem 2rem;
-            border-bottom: 1px solid var(--border-color);
-            backdrop-filter: blur(12px);
-            background-color: rgba(8, 11, 17, 0.8);
-            position: sticky;
-            top: 0;
-            z-index: 100;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .logo {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            font-weight: 700;
-            font-size: 1.5rem;
-            letter-spacing: -0.5px;
-            background: linear-gradient(135deg, #3B82F6 0%, #10B981 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        .badge-offline {
-            background-color: rgba(16, 185, 129, 0.1);
-            border: 1px solid rgba(16, 185, 129, 0.3);
-            color: var(--color-success);
-            padding: 0.25rem 0.75rem;
-            border-radius: 9999px;
-            font-size: 0.8rem;
-            font-weight: 500;
-            display: flex;
-            align-items: center;
-            gap: 0.35rem;
-        }
-
-        .badge-offline::before {
-            content: '';
-            display: inline-block;
-            width: 6px;
-            height: 6px;
-            background-color: var(--color-success);
-            border-radius: 50%;
-            box-shadow: 0 0 8px var(--color-success);
-        }
-
-        main {
-            flex: 1;
-            padding: 2rem;
-            max-width: 1400px;
-            width: 100%;
-            margin: 0 auto;
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 2rem;
-        }
-
-        @media (min-width: 1024px) {
-            main {
-                grid-template-columns: 450px 1fr;
-            }
-        }
-
-        .card {
-            background: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 16px;
-            padding: 1.5rem;
-            backdrop-filter: blur(16px);
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        .upload-section {
-            display: flex;
-            flex-direction: column;
-            gap: 1.5rem;
-        }
-
-        .dropzone {
-            border: 2px dashed rgba(255, 255, 255, 0.15);
-            border-radius: 12px;
-            padding: 3rem 1.5rem;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.25s ease;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 1rem;
-        }
-
-        .dropzone:hover, .dropzone.dragover {
-            border-color: var(--color-primary);
-            background-color: rgba(59, 130, 246, 0.03);
-            box-shadow: var(--shadow-glow);
-        }
-
-        .dropzone svg {
-            width: 48px;
-            height: 48px;
-            color: var(--text-secondary);
-            transition: color 0.25s ease;
-        }
-
-        .dropzone:hover svg {
-            color: var(--color-primary);
-        }
-
-        .dropzone-text h3 {
-            font-size: 1.1rem;
-            font-weight: 500;
-            margin-bottom: 0.25rem;
-        }
-
-        .dropzone-text p {
-            font-size: 0.85rem;
-            color: var(--text-secondary);
-        }
-
-        #file-input {
-            display: none;
-        }
-
-        .preview-container {
-            display: none;
-            width: 100%;
-            border-radius: 10px;
-            overflow: hidden;
-            border: 1px solid var(--border-color);
-            position: relative;
-            aspect-ratio: 1;
-            background-color: #000;
-        }
-
-        .preview-image {
-            width: 100%;
-            height: 100%;
-            object-fit: contain;
-        }
-
-        .btn-analyze {
-            width: 100%;
-            background: linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%);
-            border: none;
-            color: white;
-            padding: 0.85rem;
-            border-radius: 10px;
-            font-size: 1rem;
-            font-weight: 600;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.5rem;
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-
-        .btn-analyze:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
-        }
-
-        .btn-analyze:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none;
-            box-shadow: none;
-        }
-
-        /* Results dashboard */
-        .results-section {
-            display: flex;
-            flex-direction: column;
-            gap: 1.5rem;
-            min-height: 400px;
-            justify-content: center;
-        }
-
-        .results-empty {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            text-align: center;
-            color: var(--text-secondary);
-            gap: 1rem;
-        }
-
-        .results-empty svg {
-            width: 64px;
-            height: 64px;
-            opacity: 0.4;
-        }
-
-        .results-content {
-            display: none;
-            flex-direction: column;
-            gap: 1.5rem;
-            animation: fadeIn 0.4s ease-out;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .lang-bar {
-            display: flex;
-            gap: 0.5rem;
-            border-bottom: 1px solid var(--border-color);
-            padding-bottom: 1rem;
-        }
-
-        .btn-lang {
-            background-color: rgba(255, 255, 255, 0.05);
-            border: 1px solid var(--border-color);
-            color: var(--text-secondary);
-            padding: 0.4rem 0.85rem;
-            border-radius: 8px;
-            font-size: 0.85rem;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .btn-lang:hover {
-            background-color: rgba(255, 255, 255, 0.1);
-            color: var(--text-primary);
-        }
-
-        .btn-lang.active {
-            background-color: var(--color-primary);
-            border-color: var(--color-primary);
-            color: white;
-        }
-
-        .dashboard-header {
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 1.5rem;
-        }
-
-        @media (min-width: 640px) {
-            .dashboard-header {
-                grid-template-columns: auto 1fr;
-            }
-        }
-
-        /* Circular Progress Ring */
-        .ring-container {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            position: relative;
-            width: 160px;
-            height: 160px;
-        }
-
-        .progress-ring {
-            transform: rotate(-90deg);
-        }
-
-        .progress-ring__circle-bg {
-            fill: transparent;
-            stroke: rgba(255, 255, 255, 0.05);
-            stroke-width: 12;
-        }
-
-        .progress-ring__circle {
-            fill: transparent;
-            stroke-width: 12;
-            stroke-linecap: round;
-            transition: stroke-dashoffset 0.8s ease-in-out, stroke 0.3s;
-        }
-
-        .ring-text {
-            position: absolute;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .ring-percentage {
-            font-size: 2rem;
-            font-weight: 700;
-            line-height: 1;
-        }
-
-        .ring-label {
-            font-size: 0.75rem;
-            color: var(--text-secondary);
-            margin-top: 0.25rem;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        /* Triage status card */
-        .triage-card {
-            border-radius: 12px;
-            padding: 1.25rem;
-            display: flex;
-            flex-direction: column;
-            gap: 0.5rem;
-        }
-
-        .triage-title {
-            font-size: 0.8rem;
-            text-transform: uppercase;
-            letter-spacing: 0.75px;
-            font-weight: 600;
-        }
-
-        .triage-value {
-            font-size: 1.75rem;
-            font-weight: 700;
-            line-height: 1.1;
-        }
-
-        .triage-desc {
-            font-size: 0.85rem;
-        }
-
-        /* Interpretation and Guidelines */
-        .report-section {
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 1.5rem;
-        }
-
-        @media (min-width: 768px) {
-            .report-section {
-                grid-template-columns: 1fr 1fr;
-            }
-        }
-
-        .section-title {
-            font-size: 0.95rem;
-            text-transform: uppercase;
-            color: var(--text-secondary);
-            letter-spacing: 0.75px;
-            margin-bottom: 0.75rem;
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .clinical-text {
-            line-height: 1.6;
-            font-size: 1rem;
-        }
-
-        .source-tag {
-            display: inline-flex;
-            align-items: center;
-            background-color: rgba(59, 130, 246, 0.1);
-            color: #60A5FA;
-            padding: 0.1rem 0.4rem;
-            border-radius: 4px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            margin-left: 0.25rem;
-            border: 1px solid rgba(59, 130, 246, 0.2);
-            cursor: help;
-        }
-
-        .checklist {
-            list-style: none;
-            display: flex;
-            flex-direction: column;
-            gap: 0.75rem;
-        }
-
-        .checklist-item {
-            display: flex;
-            align-items: flex-start;
-            gap: 0.75rem;
-            line-height: 1.5;
-            font-size: 0.95rem;
-        }
-
-        .checklist-item svg {
-            width: 18px;
-            height: 18px;
-            margin-top: 2px;
-            flex-shrink: 0;
-        }
-
-        /* Warnings and disclaimer */
-        .cautions-box {
-            background-color: rgba(239, 68, 68, 0.03);
-            border: 1px solid rgba(239, 68, 68, 0.15);
-            border-radius: 12px;
-            padding: 1rem;
-            display: flex;
-            flex-direction: column;
-            gap: 0.5rem;
-        }
-
-        .caution-item {
-            font-size: 0.85rem;
-            color: #F87171;
-            line-height: 1.5;
-            display: flex;
-            align-items: flex-start;
-            gap: 0.5rem;
-        }
-
-        .caution-item::before {
-            content: '⚠️';
-            font-size: 0.8rem;
-        }
-
-        /* Spinner / Loader */
-        .loader {
-            display: none;
-            flex-direction: column;
-            align-items: center;
-            gap: 1.5rem;
-        }
-
-        .spinner {
-            width: 50px;
-            height: 50px;
-            border: 3px solid rgba(255, 255, 255, 0.05);
-            border-top-color: var(--color-primary);
-            border-radius: 50%;
-            animation: spin 1s infinite linear;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-
-        footer {
-            padding: 1.5rem;
-            text-align: center;
-            font-size: 0.8rem;
-            color: var(--text-secondary);
-            border-top: 1px solid var(--border-color);
-            margin-top: auto;
-        }
-    </style>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>TBScreen — Offline Clinical TB Assistant</title>
+  <style>
+    :root {
+      --bg:#080B11; --card:rgba(17,22,34,.75); --border:rgba(255,255,255,.08);
+      --text:#F3F4F6; --muted:#9CA3AF; --blue:#3B82F6; --green:#10B981;
+      --amber:#F59E0B; --red:#EF4444;
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:"Segoe UI","Helvetica Neue",sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+    header{display:flex;justify-content:space-between;align-items:center;padding:1.25rem 1.5rem;border-bottom:1px solid var(--border)}
+    .logo{font-weight:700;font-size:1.35rem;background:linear-gradient(135deg,#3B82F6,#10B981);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+    .badge{border:1px solid rgba(16,185,129,.35);color:var(--green);padding:.25rem .7rem;border-radius:999px;font-size:.8rem}
+    main{max-width:1200px;margin:0 auto;padding:1.5rem;display:grid;gap:1.25rem}
+    @media(min-width:960px){main{grid-template-columns:380px 1fr}}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:1.25rem}
+    h2{font-size:1.1rem;margin-bottom:.85rem}
+    label{display:block;font-size:.8rem;color:var(--muted);margin:.55rem 0 .25rem}
+    input,textarea,select{width:100%;background:#0d121c;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:.55rem .7rem}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:.6rem}
+    .dropzone{border:2px dashed rgba(255,255,255,.15);border-radius:12px;padding:1.5rem;text-align:center;cursor:pointer;color:var(--muted)}
+    .dropzone:hover{border-color:var(--blue)}
+    #preview{display:none;width:100%;max-height:240px;object-fit:contain;margin-top:.75rem;border-radius:8px;background:#000}
+    .btn{width:100%;margin-top:.85rem;border:none;border-radius:10px;padding:.8rem;font-weight:600;cursor:pointer;color:#fff;background:linear-gradient(135deg,#3B82F6,#1D4ED8)}
+    .btn:disabled{opacity:.5;cursor:not-allowed}
+    .btn.secondary{background:#1f2937;border:1px solid var(--border)}
+    .tabs{display:flex;gap:.4rem;margin-bottom:1rem}
+    .tab{background:#111827;border:1px solid var(--border);color:var(--muted);padding:.4rem .75rem;border-radius:8px;cursor:pointer}
+    .tab.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+    .panel{display:none}.panel.active{display:block}
+    .lang-bar{display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:1rem}
+    .btn-lang{background:#111827;border:1px solid var(--border);color:var(--muted);padding:.35rem .7rem;border-radius:8px;cursor:pointer}
+    .btn-lang.active{background:var(--blue);color:#fff}
+    .metric{font-size:2rem;font-weight:700}
+    .muted{color:var(--muted);font-size:.85rem}
+    .box{margin-top:.85rem;padding:.85rem;border-radius:10px;border:1px solid var(--border);background:rgba(0,0,0,.2)}
+    .caution{color:#F87171;font-size:.85rem;margin-top:.35rem}
+    .source{display:inline-block;background:rgba(59,130,246,.12);color:#93C5FD;border:1px solid rgba(59,130,246,.25);border-radius:4px;padding:0 .35rem;font-size:.75rem;margin-left:.25rem}
+    footer{text-align:center;color:var(--muted);font-size:.75rem;padding:1rem;border-top:1px solid var(--border)}
+    .loader{display:none;text-align:center;padding:2rem;color:var(--muted)}
+  </style>
 </head>
 <body>
+<header>
+  <div class="logo">TBScreen</div>
+  <div class="badge">Offline</div>
+</header>
+<main>
+  <section class="card">
+    <div class="tabs">
+      <button class="tab active" data-panel="screen">CXR Screen</button>
+      <button class="tab" data-panel="qa">Clinical Q&amp;A</button>
+    </div>
 
-    <header>
-        <div class="logo">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color: #3B82F6">
-                <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
-            </svg>
-            TBScreen AI
-        </div>
-        <div class="badge-offline">Offline Mode Enabled</div>
-    </header>
+    <div id="panel-screen" class="panel active">
+      <h2>Chest X-ray screening</h2>
+      <div class="dropzone" id="dropzone">Drop PNG/JPEG CXR or click to browse</div>
+      <input type="file" id="file-input" accept="image/png,image/jpeg" hidden/>
+      <img id="preview" alt="CXR preview"/>
+      <div class="row">
+        <div><label>Age (years)</label><input id="age_years" type="number" min="0" max="120" placeholder="e.g. 34"/></div>
+        <div><label>Cough (weeks)</label><input id="cough_weeks" type="number" min="0" max="52" placeholder="e.g. 3"/></div>
+      </div>
+      <label><input id="has_tb_symptoms" type="checkbox"/> TB symptoms present</label>
+      <label><input id="hiv_positive" type="checkbox"/> Living with HIV</label>
+      <label><input id="household_contact" type="checkbox"/> Household TB contact</label>
+      <button class="btn" id="btn-analyze" disabled>Screen &amp; interpret</button>
+    </div>
 
-    <main>
-        <!-- Left Column: Upload -->
-        <div class="card upload-section">
-            <h2 style="font-size: 1.25rem; font-weight: 600;">Patient X-Ray Ingestion</h2>
-            
-            <div class="dropzone" id="dropzone">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                    <rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>
-                    <circle cx="9" cy="9" r="2"/>
-                    <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>
-                </svg>
-                <div class="dropzone-text">
-                    <h3>Drag & Drop Chest X-Ray</h3>
-                    <p>Supported: PNG, JPEG (Max 16MB)</p>
-                </div>
-            </div>
-            
-            <input type="file" id="file-input" accept="image/png, image/jpeg, image/jpg">
-            
-            <div class="preview-container" id="preview-container">
-                <img src="" alt="X-ray Preview" class="preview-image" id="preview-image">
-            </div>
-            
-            <button class="btn-analyze" id="btn-analyze" disabled>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="11" cy="11" r="8"/>
-                    <path d="m21 21-4.3-4.3"/>
-                </svg>
-                Screen & Interpret Patient
-            </button>
-        </div>
+    <div id="panel-qa" class="panel">
+      <h2>Guideline Q&amp;A</h2>
+      <label>Question</label>
+      <textarea id="qa-question" rows="5" placeholder="Ask a WHO-guideline grounded clinical question…"></textarea>
+      <button class="btn secondary" id="btn-ask">Ask (offline RAG)</button>
+    </div>
+  </section>
 
-        <!-- Right Column: Results Dashboard -->
-        <div class="card results-section">
-            <!-- Empty state -->
-            <div class="results-empty" id="results-empty">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
-                    <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
-                    <polyline points="14 2 14 8 20 8"/>
-                    <line x1="8" y1="13" x2="16" y2="13"/>
-                    <line x1="8" y1="17" x2="14" y2="17"/>
-                </svg>
-                <h3>Clinical Analysis Dashboard</h3>
-                <p>Upload a patient chest X-ray and click analyze to generate an offline, RAG-grounded report.</p>
-            </div>
+  <section class="card">
+    <div class="lang-bar">
+      <button class="btn-lang active" data-lang="English">English</button>
+      <button class="btn-lang" data-lang="Yoruba">Yorùbá</button>
+      <button class="btn-lang" data-lang="Hausa">Hausa</button>
+      <button class="btn-lang" data-lang="Igbo">Igbo</button>
+    </div>
+    <div class="loader" id="loader">Running offline ONNX + RAG + GGUF…</div>
+    <div id="empty" class="muted">Upload a CXR or ask a clinical question. Results never persist across sessions.</div>
+    <div id="results" style="display:none">
+      <div class="metric" id="prob">—</div>
+      <div class="muted" id="triage">—</div>
+      <div class="box"><strong>Interpretation / Answer</strong><div id="body-text"></div></div>
+      <div class="box"><strong>Recommendation</strong><div id="rec-text"></div></div>
+      <div class="box"><strong>Patient education</strong><ul id="edu-list"></ul></div>
+      <div class="box" id="cautions"></div>
+    </div>
+  </section>
+</main>
+<footer>TBScreen • MobileNetV3-ONNX + local GGUF • decision support only, not diagnosis</footer>
+<script>
+  let selectedFile=null, currentLang="English", mode="screen";
+  const $ = (id)=>document.getElementById(id);
+  const dropzone=$("dropzone"), fileInput=$("file-input"), preview=$("preview");
+  const btnAnalyze=$("btn-analyze"), btnAsk=$("btn-ask"), loader=$("loader");
+  const empty=$("empty"), results=$("results");
 
-            <!-- Loader state -->
-            <div class="loader" id="loader">
-                <div class="spinner"></div>
-                <div style="text-align: center;">
-                    <h3 style="font-weight: 500; margin-bottom: 0.25rem;">Running Offline AI Pipeline</h3>
-                    <p style="font-size: 0.85rem; color: var(--text-secondary)">ONNX Screening + Local GGUF RAG Inference...</p>
-                </div>
-            </div>
+  document.querySelectorAll(".tab").forEach(btn=>{
+    btn.onclick=()=>{
+      document.querySelectorAll(".tab").forEach(b=>b.classList.remove("active"));
+      btn.classList.add("active");
+      mode=btn.dataset.panel;
+      document.querySelectorAll(".panel").forEach(p=>p.classList.remove("active"));
+      $("panel-"+mode).classList.add("active");
+    };
+  });
+  document.querySelectorAll(".btn-lang").forEach(btn=>{
+    btn.onclick=()=>{
+      document.querySelectorAll(".btn-lang").forEach(b=>b.classList.remove("active"));
+      btn.classList.add("active");
+      currentLang=btn.dataset.lang;
+      if(mode==="screen" && results.style.display!=="none"){
+        postJSON("/translate",{lang:currentLang}).then(renderScreen).catch(()=>{});
+      }
+    };
+  });
 
-            <!-- Content state -->
-            <div class="results-content" id="results-content">
-                <div class="lang-bar">
-                    <button class="btn-lang active" data-lang="English">English</button>
-                    <button class="btn-lang" data-lang="Yoruba">Yorùbá</button>
-                    <button class="btn-lang" data-lang="Hausa">Hausa</button>
-                    <button class="btn-lang" data-lang="Igbo">Igbo</button>
-                </div>
+  dropzone.onclick=()=>fileInput.click();
+  dropzone.ondragover=e=>{e.preventDefault();};
+  dropzone.ondrop=e=>{e.preventDefault(); if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);};
+  fileInput.onchange=e=>{ if(e.target.files[0]) handleFile(e.target.files[0]); };
 
-                <div class="dashboard-header">
-                    <!-- Gauge -->
-                    <div class="ring-container">
-                        <svg class="progress-ring" width="160" height="160">
-                            <circle class="progress-ring__circle-bg" cx="80" cy="80" r="70"/>
-                            <circle class="progress-ring__circle" id="gauge-bar" cx="80" cy="80" r="70"/>
-                        </svg>
-                        <div class="ring-text">
-                            <span class="ring-percentage" id="prob-val">0%</span>
-                            <span class="ring-label">Probability</span>
-                        </div>
-                    </div>
+  function handleFile(file){
+    selectedFile=file;
+    const reader=new FileReader();
+    reader.onload=ev=>{ preview.src=ev.target.result; preview.style.display="block"; btnAnalyze.disabled=false; };
+    reader.readAsDataURL(file);
+  }
 
-                    <!-- Triage card -->
-                    <div class="triage-card" id="triage-box">
-                        <span class="triage-title">Triage Classification</span>
-                        <span class="triage-value" id="triage-val">-</span>
-                        <p class="triage-desc" id="triage-desc"></p>
-                    </div>
-                </div>
+  function patientFields(){
+    return {
+      age_years: $("age_years").value,
+      cough_weeks: $("cough_weeks").value,
+      has_tb_symptoms: $("has_tb_symptoms").checked,
+      hiv_positive: $("hiv_positive").checked,
+      household_contact: $("household_contact").checked,
+    };
+  }
 
-                <div class="report-section">
-                    <!-- Interpretation -->
-                    <div>
-                        <h4 class="section-title">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--color-primary)">
-                                <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>
-                                <path d="M12 16v-4"/>
-                                <path d="M12 8h.01"/>
-                            </svg>
-                            Clinical Interpretation
-                        </h4>
-                        <p class="clinical-text" id="interpret-text"></p>
-                    </div>
+  function setLoading(on){
+    loader.style.display=on?"block":"none";
+    empty.style.display=on?"none":(results.style.display==="none"?"block":"none");
+  }
 
-                    <!-- Next steps -->
-                    <div>
-                        <h4 class="section-title">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--color-success)">
-                                <path d="M9 11 12 14 22 4"/>
-                                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
-                            </svg>
-                            Recommended Next Steps
-                        </h4>
-                        <p class="clinical-text" id="recommend-text" style="font-weight: 500;"></p>
-                    </div>
-                </div>
+  function escapeHtml(s){
+    return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+  function withCitations(s){
+    return escapeHtml(s).replace(/\[([a-zA-Z0-9\-]+)\]/g,'<span class="source">$1</span>');
+  }
 
-                <!-- Patient Education -->
-                <div>
-                    <h4 class="section-title">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--color-warning)">
-                            <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
-                            <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
-                        </svg>
-                        Patient Education points
-                    </h4>
-                    <ul class="checklist" id="education-list"></ul>
-                </div>
+  function renderScreen(data){
+    if(data.error){ alert(data.error); return; }
+    empty.style.display="none"; results.style.display="block";
+    const prob=Math.round((data.vision_result?.tb_probability||0)*100);
+    $("prob").textContent=prob+"% TB probability";
+    $("triage").textContent=`Triage: ${(data.triage||"—").toUpperCase()} | Risk: ${data.risk_level||"—"}`;
+    const interp=data.interpretation||{};
+    $("body-text").innerHTML=withCitations(interp.interpretation||"");
+    $("rec-text").innerHTML=withCitations(interp.recommendation||"");
+    $("edu-list").innerHTML=(interp.education||[]).map(p=>`<li>${withCitations(p)}</li>`).join("");
+    $("cautions").innerHTML="<strong>Cautions</strong>"+(interp.cautions||[]).map(c=>`<div class="caution">${escapeHtml(c)}</div>`).join("");
+  }
 
-                <!-- Cautions box -->
-                <div class="cautions-box" id="cautions-box"></div>
-            </div>
-        </div>
-    </main>
+  function renderQA(data){
+    if(data.error){ alert(data.error); return; }
+    empty.style.display="none"; results.style.display="block";
+    $("prob").textContent="Clinical Q&A";
+    $("triage").textContent="Grounded in offline WHO passages";
+    const a=data.answer||{};
+    $("body-text").innerHTML=withCitations(a.answer||"");
+    $("rec-text").innerHTML=withCitations(a.recommendation||"");
+    $("edu-list").innerHTML=(a.education||[]).map(p=>`<li>${withCitations(p)}</li>`).join("");
+    $("cautions").innerHTML="<strong>Cautions</strong>"+(a.cautions||[]).map(c=>`<div class="caution">${escapeHtml(c)}</div>`).join("");
+  }
 
-    <footer>
-        TBScreen AI Assistant • Powered by MobileNetV3-ONNX & Gemma-4-E2B-GGUF • 100% Offline Decision Support
-    </footer>
+  async function postJSON(url, body){
+    const res=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    return res.json();
+  }
 
-    <script>
-        const dropzone = document.getElementById('dropzone');
-        const fileInput = document.getElementById('file-input');
-        const previewContainer = document.getElementById('preview-container');
-        const previewImage = document.getElementById('preview-image');
-        const btnAnalyze = document.getElementById('btn-analyze');
-        
-        const resultsEmpty = document.getElementById('results-empty');
-        const loader = document.getElementById('loader');
-        const resultsContent = document.getElementById('results-content');
-        
-        let selectedFile = null;
-        let currentLang = "English";
+  btnAnalyze.onclick=async()=>{
+    if(!selectedFile) return;
+    setLoading(true); results.style.display="none"; btnAnalyze.disabled=true;
+    const fd=new FormData();
+    fd.append("file", selectedFile);
+    fd.append("lang", currentLang);
+    const ctx=patientFields();
+    Object.entries(ctx).forEach(([k,v])=>fd.append(k, v));
+    try{
+      const res=await fetch("/analyze",{method:"POST",body:fd});
+      const data=await res.json().catch(()=>({error:"Bad JSON from server (process may have crashed — check logs/tbscreen.log)"}));
+      setLoading(false); btnAnalyze.disabled=false;
+      if(!res.ok || data.error){ alert(data.error || ("HTTP "+res.status)); empty.style.display="block"; return; }
+      renderScreen(data);
+    }catch(e){
+      setLoading(false); btnAnalyze.disabled=false;
+      alert("Request failed: "+e+". If the terminal shows GGML_ASSERT / abort, restart the app and check logs/tbscreen.log");
+      empty.style.display="block";
+    }
+  };
 
-        // Drag & Drop
-        dropzone.addEventListener('click', () => fileInput.click());
-        
-        dropzone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            dropzone.classList.add('dragover');
-        });
-        
-        dropzone.addEventListener('dragleave', () => {
-            dropzone.classList.remove('dragover');
-        });
-        
-        dropzone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            dropzone.classList.remove('dragover');
-            if (e.dataTransfer.files.length > 0) {
-                handleFile(e.dataTransfer.files[0]);
-            }
-        });
-
-        fileInput.addEventListener('change', (e) => {
-            if (e.target.files.length > 0) {
-                handleFile(e.target.files[0]);
-            }
-        });
-
-        function handleFile(file) {
-            selectedFile = file;
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                previewImage.src = e.target.result;
-                dropzone.style.display = 'none';
-                previewContainer.style.display = 'block';
-                btnAnalyze.disabled = false;
-            };
-            reader.readAsDataURL(file);
-        }
-
-        // Analysis
-        btnAnalyze.addEventListener('click', () => {
-            if (!selectedFile) return;
-            
-            resultsEmpty.style.display = 'none';
-            resultsContent.style.display = 'none';
-            loader.style.display = 'flex';
-            btnAnalyze.disabled = true;
-
-            const formData = new FormData();
-            formData.append('file', selectedFile);
-            formData.append('lang', currentLang);
-
-            fetch('/analyze', {
-                method: 'POST',
-                body: formData
-            })
-            .then(res => res.json())
-            .then(data => {
-                loader.style.display = 'none';
-                btnAnalyze.disabled = false;
-                if (data.error) {
-                    alert('Error: ' + data.error);
-                    resultsEmpty.style.display = 'flex';
-                    return;
-                }
-                renderResults(data);
-            })
-            .catch(err => {
-                loader.style.display = 'none';
-                btnAnalyze.disabled = false;
-                alert('Connection error or model load failure.');
-                resultsEmpty.style.display = 'flex';
-            });
-        });
-
-        // Language toggle
-        document.querySelectorAll('.btn-lang').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                document.querySelectorAll('.btn-lang').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                currentLang = btn.getAttribute('data-lang');
-                
-                // If results are currently showing, translate them on the fly
-                if (resultsContent.style.display === 'flex' || resultsContent.style.display === 'block') {
-                    resultsContent.style.opacity = '0.5';
-                    fetch('/translate', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ lang: currentLang })
-                    })
-                    .then(res => res.json())
-                    .then(data => {
-                        resultsContent.style.opacity = '1';
-                        if (!data.error) {
-                            renderResults(data);
-                        }
-                    })
-                    .catch(() => {
-                        resultsContent.style.opacity = '1';
-                    });
-                }
-            });
-        });
-
-        function renderResults(data) {
-            resultsEmpty.style.display = 'none';
-            loader.style.display = 'none';
-            resultsContent.style.display = 'flex';
-
-            const prob = data.vision_result.tb_probability;
-            const probPercent = Math.round(prob * 100);
-            
-            // Render percentage
-            document.getElementById('prob-val').innerText = probPercent + '%';
-
-            // Circular progress bar
-            const circle = document.getElementById('gauge-bar');
-            const radius = circle.r.baseVal.value;
-            const circumference = radius * 2 * Math.PI;
-            circle.style.strokeDasharray = `${circumference} ${circumference}`;
-            
-            // Calibrate gauge color and offset
-            let color = 'var(--color-success)';
-            if (data.risk_level === 'high') {
-                color = 'var(--color-danger)';
-            } else if (data.risk_level === 'moderate') {
-                color = 'var(--color-warning)';
-            }
-            
-            circle.style.stroke = color;
-            const offset = circumference - (prob * circumference);
-            circle.style.strokeDashoffset = offset;
-
-            // Render Triage Card
-            const triageBox = document.getElementById('triage-box');
-            const triageVal = document.getElementById('triage-val');
-            const triageDesc = document.getElementById('triage-desc');
-            
-            triageVal.innerText = data.triage.toUpperCase();
-            
-            if (data.triage === 'refer') {
-                triageBox.style.backgroundColor = 'rgba(239, 68, 68, 0.1)';
-                triageBox.style.border = '1px solid rgba(239, 68, 68, 0.2)';
-                triageVal.style.color = 'var(--color-danger)';
-                triageDesc.innerText = 'High risk detected. Immediate referral for confirmatory bacteriological testing (Xpert MTB/RIF) required.';
-            } else if (data.triage === 'retest') {
-                triageBox.style.backgroundColor = 'rgba(245, 158, 11, 0.1)';
-                triageBox.style.border = '1px solid rgba(245, 158, 11, 0.2)';
-                triageVal.style.color = 'var(--color-warning)';
-                triageDesc.innerText = 'Borderline screening result. Retest patient or follow up closely based on clinical presentation.';
-            } else {
-                triageBox.style.backgroundColor = 'rgba(16, 185, 129, 0.1)';
-                triageBox.style.border = '1px solid rgba(16, 185, 129, 0.2)';
-                triageVal.style.color = 'var(--color-success)';
-                triageDesc.innerText = 'Negative screening result. TB disease is unlikely. Monitor if symptoms persist.';
-            }
-
-            // Render Interpretation & Recommendation
-            const interpret = data.interpretation || {};
-            document.getElementById('interpret-text').innerHTML = formatCitations(interpret.interpretation || 'No explanation generated.');
-            document.getElementById('recommend-text').innerHTML = formatCitations(interpret.recommendation || 'No recommendation.');
-
-            // Render Education
-            const eduList = document.getElementById('education-list');
-            eduList.innerHTML = '';
-            (interpret.education || []).forEach(point => {
-                const li = document.createElement('li');
-                li.className = 'checklist-item';
-                li.innerHTML = `
-                    <svg viewBox="0 0 24 24" fill="none" stroke="var(--color-success)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="20 6 9 17 4 12"/>
-                    </svg>
-                    <span>${formatCitations(point)}</span>
-                `;
-                eduList.appendChild(li);
-            });
-
-            // Render Cautions Box
-            const cautionsBox = document.getElementById('cautions-box');
-            cautionsBox.innerHTML = '<span style="font-size: 0.8rem; font-weight: 600; text-transform: uppercase; color: #F87171; letter-spacing: 0.5px;">Safety Warnings & Disclaimers</span>';
-            (interpret.cautions || []).forEach(caution => {
-                const div = document.createElement('div');
-                div.className = 'caution-item';
-                div.innerText = caution;
-                cautionsBox.appendChild(div);
-            });
-        }
-
-        function formatCitations(text) {
-            // Replaces e.g. [who-tb-screening-01] with a styled source tag
-            return text.replace(/\\[([a-zA-Z0-9\\-]+)\\]/g, (match, id) => {
-                return `<span class="source-tag" title="Grounding Source">${id}</span>`;
-            });
-        }
-    </script>
+  btnAsk.onclick=async()=>{
+    const question=$("qa-question").value.trim();
+    if(!question){ alert("Enter a question"); return; }
+    setLoading(true); results.style.display="none";
+    try{
+      const res=await fetch("/ask",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({question, lang:currentLang})});
+      const data=await res.json().catch(()=>({error:"Bad JSON from server (process may have crashed — check logs/tbscreen.log)"}));
+      setLoading(false);
+      if(!res.ok || data.error){ alert(data.error || ("HTTP "+res.status)); empty.style.display="block"; return; }
+      renderQA(data);
+    }catch(e){
+      setLoading(false);
+      alert("Request failed: "+e+". Server may have crashed — check logs/tbscreen.log");
+      empty.style.display="block";
+    }
+  };
+</script>
 </body>
 </html>
 """
@@ -894,24 +367,42 @@ def home():
 def analyze():
     if "file" not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
-
     file = request.files["file"]
-    if file.filename == "":
+    if not file.filename:
         return jsonify({"error": "Empty filename"}), 400
 
-    ext = os.path.splitext(file.filename)[1]
-    filename = f"{uuid.uuid4()}{ext}"
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in ALLOWED_EXT:
+        return jsonify({"error": "Only PNG/JPEG uploads are allowed"}), 400
+
+    filename = f"{uuid.uuid4().hex}{ext}"
     filepath = os.path.join(app.config["UPLOAD_FOLDER"], filename)
     file.save(filepath)
 
     lang = request.form.get("lang", "English")
+    patient_context = _parse_patient_context(request.form)
+    log.info("POST /analyze lang=%s patient=%s file=%s", lang, patient_context, filename)
 
     try:
+        _validate_image(filepath)
         assist = get_assistant()
-        result = assist.process_image(filepath, lang=lang)
+        assist.clear_session()
+        result = assist.process_image(filepath, lang=lang, patient_context=patient_context or None)
+        log.info(
+            "POST /analyze ok triage=%s risk=%s sources=%s",
+            result.get("triage"),
+            result.get("risk_level"),
+            result.get("retrieved_sources"),
+        )
         return jsonify(result)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — surface clean API error to UI
+        log.error("POST /analyze failed: %s\n%s", e, traceback.format_exc())
         return jsonify({"error": str(e)}), 500
+    finally:
+        try:
+            os.remove(filepath)
+        except OSError:
+            pass
 
 
 @app.route("/translate", methods=["POST"])
@@ -919,14 +410,16 @@ def translate():
     """Re-interpret cached vision result in a new language — skips ONNX."""
     data = request.get_json() or {}
     lang = data.get("lang", "English")
-
+    log.info("POST /translate lang=%s", lang)
     try:
         assist = get_assistant()
         result = assist.reinterpret(lang=lang)
         return jsonify(result)
     except ValueError as e:
+        log.warning("POST /translate bad request: %s", e)
         return jsonify({"error": str(e)}), 400
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
+        log.error("POST /translate failed: %s\n%s", e, traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
 
@@ -938,17 +431,31 @@ def ask():
     lang = data.get("lang", "English")
     if not question:
         return jsonify({"error": "question is required"}), 400
-
+    log.info("POST /ask lang=%s q_chars=%s", lang, len(question))
     try:
         assist = get_assistant()
         result = assist.ask(question, lang=lang)
+        log.info("POST /ask ok sources=%s", result.get("retrieved_sources"))
         return jsonify(result)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
+        log.error("POST /ask failed: %s\n%s", e, traceback.format_exc())
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/session/clear", methods=["POST"])
+def clear_session():
+    """Explicitly drop cached vision/patient state between patients."""
+    if assistant is not None:
+        assistant.clear_session()
+    return jsonify({"ok": True})
 
 
 if __name__ == "__main__":
     host = os.environ.get("TBSCREEN_HOST", "127.0.0.1")
     port = int(os.environ.get("TBSCREEN_PORT", "5000"))
-    print(f"Starting TBScreen Clinical Dashboard on http://{host}:{port}")
-    app.run(host=host, port=port, debug=False)
+    log.info("Starting TBScreen on http://%s:%s (logs → %s)", host, port, LOG_DIR)
+    print(f"Starting TBScreen on http://{host}:{port}")
+    print(f"Logs: {os.path.join(LOG_DIR, 'tbscreen.log')}")
+    print(f"Launch alternatives:  PYTHONPATH=src:. python src/tbscreen/app.py")
+    # threaded=False: llama.cpp context must not serve concurrent requests.
+    app.run(host=host, port=port, debug=False, threaded=False)

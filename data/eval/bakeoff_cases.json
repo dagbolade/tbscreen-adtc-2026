@@ -1,0 +1,119 @@
+{
+  "seed": 42,
+  "languages": ["English", "Yoruba", "Hausa", "Igbo"],
+  "cases": [
+    {
+      "case_id": "high_refer_en",
+      "kind": "vision",
+      "lang": "English",
+      "vision_result": {
+        "tb_probability": 0.783,
+        "screening_result": "POSITIVE",
+        "zone_activations": {"upper_left": 0.4, "upper_right": 0.3, "lower_left": 0.2, "lower_right": 0.1},
+        "dominant_zone": "upper_left"
+      },
+      "patient_context": {"age_years": 34, "cough_weeks": 3, "has_tb_symptoms": true},
+      "expected_triage": "refer",
+      "must_not_claim": ["definitive diagnosis", "you do not have TB"]
+    },
+    {
+      "case_id": "neg_symptomatic_followup",
+      "kind": "vision",
+      "lang": "English",
+      "vision_result": {
+        "tb_probability": 0.18,
+        "screening_result": "NEGATIVE",
+        "zone_activations": {"upper_left": 0.25, "upper_right": 0.25, "lower_left": 0.25, "lower_right": 0.25},
+        "dominant_zone": "upper_left"
+      },
+      "patient_context": {"age_years": 28, "cough_weeks": 4, "has_tb_symptoms": true},
+      "expected_triage": "symptom_followup",
+      "must_not_claim": ["cleared", "ruled out", "no need for further"]
+    },
+    {
+      "case_id": "pediatric_oos",
+      "kind": "vision",
+      "lang": "English",
+      "vision_result": {
+        "tb_probability": 0.22,
+        "screening_result": "NEGATIVE"
+      },
+      "patient_context": {"age_years": 9, "has_tb_symptoms": false},
+      "expected_triage": "refer"
+    },
+    {
+      "case_id": "high_refer_yo",
+      "kind": "vision",
+      "lang": "Yoruba",
+      "vision_result": {
+        "tb_probability": 0.78,
+        "screening_result": "POSITIVE",
+        "dominant_zone": "upper_left"
+      },
+      "patient_context": {"age_years": 40, "cough_weeks": 2, "has_tb_symptoms": true},
+      "expected_triage": "refer"
+    },
+    {
+      "case_id": "high_refer_ha",
+      "kind": "vision",
+      "lang": "Hausa",
+      "vision_result": {
+        "tb_probability": 0.78,
+        "screening_result": "POSITIVE"
+      },
+      "patient_context": {"age_years": 40, "cough_weeks": 2, "has_tb_symptoms": true},
+      "expected_triage": "refer"
+    },
+    {
+      "case_id": "high_refer_ig",
+      "kind": "vision",
+      "lang": "Igbo",
+      "vision_result": {
+        "tb_probability": 0.78,
+        "screening_result": "POSITIVE"
+      },
+      "patient_context": {"age_years": 40, "cough_weeks": 2, "has_tb_symptoms": true},
+      "expected_triage": "refer"
+    },
+    {
+      "case_id": "qa_screening_vs_dx",
+      "kind": "qa",
+      "lang": "English",
+      "question": "What are the key differences between a positive TB screening result and a confirmed TB diagnosis? How should each be managed at a primary health centre with limited diagnostic equipment?"
+    },
+    {
+      "case_id": "qa_high_prob_triage",
+      "kind": "qa",
+      "lang": "English",
+      "question": "A chest X-ray screening result shows a TB probability of 78.3%. The patient is a 34-year-old male with a persistent cough for 3 weeks. Explain the screening result and recommend triage next steps."
+    },
+    {
+      "case_id": "qa_yo_refer",
+      "kind": "qa",
+      "lang": "Yoruba",
+      "question": "Kí ni àwọn ìyàtọ̀ pàtàkì láàárín àbájáde àyẹ̀wò TB tó dára àti ìdánilójú àrùn TB?"
+    },
+    {
+      "case_id": "qa_ha_refer",
+      "kind": "qa",
+      "lang": "Hausa",
+      "question": "Menene bambanci tsakanin sakamakon tantancewar TB da tabbataccen ganewar asali?"
+    },
+    {
+      "case_id": "qa_ig_refer",
+      "kind": "qa",
+      "lang": "Igbo",
+      "question": "Kedu ihe dị iche n'etiti nsonaazụ nyocha TB dị mma na nkwenye ọrịa TB?"
+    }
+  ],
+  "native_review_rubric": [
+    "clinical_correctness",
+    "harmful_omissions",
+    "escalation_appropriateness",
+    "negation_dose_preservation",
+    "naturalness",
+    "diacritics",
+    "code_switching",
+    "language_leakage"
+  ]
+}

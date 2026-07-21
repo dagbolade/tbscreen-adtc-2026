@@ -1,0 +1,79 @@
+{
+  "candidates": [
+    {
+      "id": "gemma4-e2b-q4km",
+      "display_name": "Gemma 4 E2B IT Q4_K_M",
+      "role": "commercial_candidate",
+      "license": "Gemma Terms of Use",
+      "gguf_url": "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K_M.gguf",
+      "local_path": "model/gemma-4-E2B-it-Q4_K_M.gguf",
+      "expected_sha256": "9378bc471710229ef165709b62e34bfb62231420ddaf6d729e727305b5b8672d",
+      "params": "~2.6B effective",
+      "status": "selected_baseline"
+    },
+    {
+      "id": "qwen35-4b",
+      "display_name": "Qwen 3.5 4B (transcript)",
+      "role": "rejected_portability",
+      "license": "Apache-2.0",
+      "gguf_url": null,
+      "local_path": null,
+      "skip_download": true,
+      "evidence": "docs/claude_chat_transcript.md — qwen35 hybrid SSM/attention does not load in standard llama-cpp-python; disqualification risk",
+      "params": "4B"
+    },
+    {
+      "id": "qwen25-3b-q4km",
+      "display_name": "Qwen 2.5 3B Instruct Q4_K_M",
+      "role": "skipped_per_user",
+      "license": "Apache-2.0",
+      "gguf_url": null,
+      "local_path": null,
+      "skip_download": true,
+      "evidence": "Trusted from prior transcript model bake-off conclusions; download interrupted by user request 2026-07-20",
+      "params": "3B"
+    },
+    {
+      "id": "llama32-3b-q4km",
+      "display_name": "Llama 3.2 3B Instruct Q4_K_M",
+      "role": "skipped_per_user",
+      "license": "Llama 3.2 Community License",
+      "gguf_url": null,
+      "local_path": null,
+      "skip_download": true,
+      "evidence": "Trusted from prior transcript: weaker African-language coverage vs Gemma; download interrupted by user request 2026-07-20",
+      "params": "3B"
+    },
+    {
+      "id": "tiny-aya-earth-q4km",
+      "display_name": "Tiny Aya Earth Q4_K_M",
+      "role": "research_control",
+      "license": "CC-BY-NC-4.0 (excluded from final commercial selection)",
+      "gguf_url": "https://huggingface.co/CohereLabs/tiny-aya-earth-GGUF/resolve/main/tiny-aya-earth-q4_k_m.gguf",
+      "local_path": "model/candidates/tiny-aya-earth-q4_k_m.gguf",
+      "skip_download": true,
+      "params": "3.35B",
+      "note": "Research comparator only; not downloaded in this iteration (CC-BY-NC blocks final pick)."
+    },
+    {
+      "id": "tiny-aya-global-q4km",
+      "display_name": "Tiny Aya Global Q4_K_M",
+      "role": "research_control",
+      "license": "CC-BY-NC-4.0 (excluded from final commercial selection)",
+      "gguf_url": null,
+      "local_path": null,
+      "skip_download": true,
+      "params": "3.35B"
+    }
+  ],
+  "gates": [
+    "credential_free_gguf",
+    "verified_license",
+    "llama_cpp_load",
+    "embedded_or_compatible_chat_template",
+    "peak_rss_below_7gb",
+    "worst_language_quality"
+  ],
+  "selection_rule": "Winner must be commercial/pilot-compatible. Tiny Aya is research-only. Qwen 2.5 3B / Llama 3.2 3B re-downloads skipped per user; transcript evidence accepted. Qwen3.5-4B rejected for llama.cpp portability.",
+  "selected_winner": "gemma4-e2b-q4km"
+}

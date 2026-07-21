@@ -49,6 +49,8 @@ config/
 .DS_Store
 
 # Logs
+logs/*
+!logs/.gitkeep
 *.log
 
 # Python

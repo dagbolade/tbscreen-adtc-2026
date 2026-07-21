@@ -192,6 +192,29 @@ View the full eligibility rules at [adtc-2026.devpost.com/rules](https://adtc-20
 
 ---
 
+## TBScreen — Run Instructions
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+bash download_model.sh
+python scripts/build_rag_index.py   # after corpus edits
+python -m tbscreen.app              # from repo root after: export PYTHONPATH=src:.
+# or:
+PYTHONPATH=src:. python src/tbscreen/app.py
+# UI: http://127.0.0.1:5000  (CXR screen + Clinical Q&A)
+
+python scripts/eval.py
+python scripts/vision_smoke.py
+python scripts/bakeoff.py --candidate gemma4-e2b-q4km
+python tests/test_e2e_pipeline.py
+python -m unittest tests.test_retrieval_policy tests.test_contracts
+```
+
+Gate 1 deadline: **August 25, 2026**. Official profiler target: Ubuntu 22.04 / 8 GB ADTC Standard Laptop.
+
+---
+
 ## 📄 License
 
 This template is licensed under the terms of the [GNU GPL v3 License](LICENSE).

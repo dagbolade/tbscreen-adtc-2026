@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Full pipeline: chest X-ray → vision screening → RAG retrieval → LLM clinical interpretation."""
+"""Full pipeline: chest X-ray → vision screening → topic RAG → LLM clinical interpretation."""
 
 from __future__ import annotations
 
@@ -11,17 +11,11 @@ from . import core, llm
 from .rag import Retriever
 
 
-def _retrieval_query(vision_result: dict[str, Any]) -> str:
-    """Build a retrieval query from the vision model's output."""
-    risk, triage = core.classify_risk(vision_result.get("tb_probability", 0.0))
-    parts = [
-        "tuberculosis",
-        f"{risk} risk",
-        f"triage {triage}",
-        vision_result.get("screening_result", ""),
-        vision_result.get("dominant_zone", ""),
-    ]
-    return " ".join(p for p in parts if p)
+def _patient_kwargs(patient_context: dict[str, Any] | None) -> dict[str, Any]:
+    if not patient_context:
+        return {}
+    keys = ("age_years", "cough_weeks", "has_tb_symptoms", "hiv_positive", "household_contact")
+    return {k: patient_context[k] for k in keys if k in patient_context}
 
 
 def screen_and_interpret(
@@ -30,10 +24,17 @@ def screen_and_interpret(
     vision_result: dict[str, Any],
     lang: str = "English",
     k: int = 4,
+    patient_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Full turn: vision result → retrieve WHO guidelines → grounded clinical interpretation."""
-    query = _retrieval_query(vision_result)
-    hits = retriever.retrieve(query, lang=lang, k=k)
+    """Full turn: vision → WHO-aligned triage → topic-localized RAG → grounded interpretation."""
+    decision = core.decide_triage(
+        vision_result.get("tb_probability", 0.0),
+        **_patient_kwargs(patient_context),
+    )
+    topics = core.topics_for_decision(decision)
+    # English topic labels rank within the language-filtered / topic-filtered subset.
+    query = " ".join(topics) + " tuberculosis screening triage"
+    hits = retriever.retrieve_by_topics(topics, lang=lang, k=k, query=query)
     context = Retriever.as_context(hits)
 
     interpretation = llm.interpret(
@@ -42,14 +43,17 @@ def screen_and_interpret(
         context,
         lang=lang,
         valid_sources=[h["id"] for h in hits],
+        decision=decision,
     )
 
     return {
         "vision_result": vision_result,
-        "risk_level": interpretation["risk_level"] if interpretation else "unknown",
-        "triage": interpretation["triage"] if interpretation else "unknown",
+        "decision": decision,
+        "risk_level": decision["risk_level"],
+        "triage": decision["triage"],
         "interpretation": interpretation,
         "retrieved_sources": [h["id"] for h in hits],
+        "retrieval_topics": topics,
     }
 
 

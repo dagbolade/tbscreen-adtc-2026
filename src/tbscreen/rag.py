@@ -5,13 +5,11 @@ from __future__ import annotations
 
 import json
 import math
-import re
+import unicodedata
 from pathlib import Path
 from typing import Any
 
 import numpy as np
-
-_TOKEN_RE = re.compile(r"[a-z0-9àáâãèéêìíòóôõùúûýćčďňřšťž]+", re.IGNORECASE)
 
 LANG_ALIASES = {
     "english": "en",
@@ -24,8 +22,20 @@ LANG_ALIASES = {
 
 
 def tokenize(text: str) -> list[str]:
-    """Lowercase alphanumeric tokens; keeps common Latin diacritics for African scripts."""
-    return _TOKEN_RE.findall(text.lower())
+    """NFKC-normalize; keep letters, combining marks, and digits as word tokens."""
+    norm = unicodedata.normalize("NFKC", text).lower()
+    tokens: list[str] = []
+    buf: list[str] = []
+    for ch in norm:
+        cat = unicodedata.category(ch)
+        if cat[0] in {"L", "M", "N"}:
+            buf.append(ch)
+        elif buf:
+            tokens.append("".join(buf))
+            buf = []
+    if buf:
+        tokens.append("".join(buf))
+    return tokens
 
 
 def _lang_code(lang: str) -> str:
@@ -92,7 +102,7 @@ def _cosine_rows(query: np.ndarray, matrix: np.ndarray) -> np.ndarray:
 
 
 class Retriever:
-    """In-memory cosine retriever over corpus passages {id, source, lang, text}."""
+    """In-memory cosine retriever over corpus passages {id, source, lang, topic, text}."""
 
     def __init__(
         self,
@@ -157,16 +167,31 @@ class Retriever:
             raise ValueError("Index passage_ids do not match corpus")
         return cls(ordered, data["vectors"].astype(np.float32), vocab, data["idf"].astype(np.float32))
 
-    def retrieve(self, query: str, lang: str = "English", k: int = 4) -> list[dict[str, Any]]:
-        """Return the top-k passages matching the language, most similar to the query."""
+    def retrieve(
+        self,
+        query: str,
+        lang: str = "English",
+        k: int = 4,
+        topics: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return top-k language-matched passages; optional topic filter before TF-IDF rank."""
         q = embed_query(query, self.vocab, self.idf)
         target = _lang_code(lang)
+        topic_set = set(topics) if topics else None
 
         indices = [
             i
             for i, p in enumerate(self.passages)
             if _lang_code(str(p.get("lang", "en"))) == target
+            and (topic_set is None or str(p.get("topic", "")) in topic_set)
         ]
+        # Fall back: same language without topic filter, then any language.
+        if not indices and topic_set is not None:
+            indices = [
+                i
+                for i, p in enumerate(self.passages)
+                if _lang_code(str(p.get("lang", "en"))) == target
+            ]
         if not indices:
             indices = list(range(len(self.passages)))
 
@@ -174,6 +199,34 @@ class Retriever:
         scores = _cosine_rows(q, sub)
         order = np.argsort(-scores)[:k]
         return [self.passages[indices[int(j)]] for j in order]
+
+    def retrieve_by_topics(
+        self,
+        topics: list[str],
+        lang: str = "English",
+        k: int = 4,
+        query: str = "",
+    ) -> list[dict[str, Any]]:
+        """Cover requested topics in order, then fill remaining slots by TF-IDF rank."""
+        selected: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for topic in topics:
+            for hit in self.retrieve(query or topic, lang=lang, k=k, topics=[topic]):
+                if hit["id"] in seen:
+                    continue
+                selected.append(hit)
+                seen.add(hit["id"])
+                if len(selected) >= k:
+                    return selected[:k]
+        if len(selected) < k:
+            for hit in self.retrieve(query or " ".join(topics), lang=lang, k=k):
+                if hit["id"] in seen:
+                    continue
+                selected.append(hit)
+                seen.add(hit["id"])
+                if len(selected) >= k:
+                    break
+        return selected[:k]
 
     @staticmethod
     def as_context(passages: list[dict[str, Any]]) -> str:
