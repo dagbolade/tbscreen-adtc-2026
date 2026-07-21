@@ -129,52 +129,158 @@ HTML_TEMPLATE = r"""
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>TBScreen — Offline Clinical TB Assistant</title>
+  <meta name="description" content="TBScreen: an offline clinical decision-support tool for TB chest X-ray screening and WHO-guideline Q&A."/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
   <style>
-    :root {
-      --bg:#080B11; --card:rgba(17,22,34,.75); --border:rgba(255,255,255,.08);
-      --text:#F3F4F6; --muted:#9CA3AF; --blue:#3B82F6; --green:#10B981;
-      --amber:#F59E0B; --red:#EF4444;
-    }
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:"Segoe UI","Helvetica Neue",sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
-    header{display:flex;justify-content:space-between;align-items:center;padding:1.25rem 1.5rem;border-bottom:1px solid var(--border)}
-    .logo{font-weight:700;font-size:1.35rem;background:linear-gradient(135deg,#3B82F6,#10B981);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-    .badge{border:1px solid rgba(16,185,129,.35);color:var(--green);padding:.25rem .7rem;border-radius:999px;font-size:.8rem}
-    main{max-width:1200px;margin:0 auto;padding:1.5rem;display:grid;gap:1.25rem}
+    :root{
+      --bg:#F8F9FB;--surface:#FFFFFF;--border:#E2E5EB;
+      --text:#1A1D23;--text-secondary:#5F6672;--text-tertiary:#8B919D;
+      --primary:#1570EF;--primary-hover:#1259C4;--primary-light:#EFF5FF;
+      --green:#0D7C42;--green-bg:#ECFDF3;
+      --amber:#B25E09;--amber-bg:#FFF7ED;
+      --red:#C4320A;--red-bg:#FEF3F2;
+      --radius:10px;--radius-sm:6px;
+    }
+    html{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+    body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:14px;line-height:1.5}
+
+    /* ── Header ─────────────────────────────────────── */
+    header{
+      background:var(--surface);border-bottom:1px solid var(--border);
+      display:flex;justify-content:space-between;align-items:center;
+      padding:.875rem 1.5rem;
+    }
+    .logo{font-weight:700;font-size:1.2rem;color:var(--text);letter-spacing:-.02em}
+    .logo span{color:var(--primary)}
+    .badge{
+      display:inline-flex;align-items:center;gap:5px;
+      color:var(--green);background:var(--green-bg);
+      padding:.25rem .65rem;border-radius:999px;font-size:.75rem;font-weight:500;
+    }
+    .badge::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--green)}
+
+    /* ── Layout ─────────────────────────────────────── */
+    main{max-width:1120px;margin:0 auto;padding:1.25rem;display:grid;gap:1.25rem}
     @media(min-width:960px){main{grid-template-columns:380px 1fr}}
-    .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:1.25rem}
-    h2{font-size:1.1rem;margin-bottom:.85rem}
-    label{display:block;font-size:.8rem;color:var(--muted);margin:.55rem 0 .25rem}
-    input,textarea,select{width:100%;background:#0d121c;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:.55rem .7rem}
-    .row{display:grid;grid-template-columns:1fr 1fr;gap:.6rem}
-    .dropzone{border:2px dashed rgba(255,255,255,.15);border-radius:12px;padding:1.5rem;text-align:center;cursor:pointer;color:var(--muted)}
-    .dropzone:hover{border-color:var(--blue)}
-    #preview{display:none;width:100%;max-height:240px;object-fit:contain;margin-top:.75rem;border-radius:8px;background:#000}
-    .btn{width:100%;margin-top:.85rem;border:none;border-radius:10px;padding:.8rem;font-weight:600;cursor:pointer;color:#fff;background:linear-gradient(135deg,#3B82F6,#1D4ED8)}
-    .btn:disabled{opacity:.5;cursor:not-allowed}
-    .btn.secondary{background:#1f2937;border:1px solid var(--border)}
-    .tabs{display:flex;gap:.4rem;margin-bottom:1rem}
-    .tab{background:#111827;border:1px solid var(--border);color:var(--muted);padding:.4rem .75rem;border-radius:8px;cursor:pointer}
-    .tab.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+
+    /* ── Card ───────────────────────────────────────── */
+    .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem}
+
+    /* ── Tabs ───────────────────────────────────────── */
+    .tabs{display:flex;gap:2px;background:var(--bg);border-radius:var(--radius-sm);padding:3px;margin-bottom:1.25rem}
+    .tab{
+      flex:1;text-align:center;background:transparent;border:none;
+      color:var(--text-secondary);padding:.45rem .75rem;border-radius:5px;
+      cursor:pointer;font-size:.8125rem;font-weight:500;font-family:inherit;
+      transition:all .15s ease;
+    }
+    .tab:hover{color:var(--text)}
+    .tab.active{background:var(--surface);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.06)}
     .panel{display:none}.panel.active{display:block}
-    .lang-bar{display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:1rem}
-    .btn-lang{background:#111827;border:1px solid var(--border);color:var(--muted);padding:.35rem .7rem;border-radius:8px;cursor:pointer}
-    .btn-lang.active{background:var(--blue);color:#fff}
-    .metric{font-size:2rem;font-weight:700}
-    .muted{color:var(--muted);font-size:.85rem}
-    .box{margin-top:.85rem;padding:.85rem;border-radius:10px;border:1px solid var(--border);background:rgba(0,0,0,.2)}
-    .caution{color:#F87171;font-size:.85rem;margin-top:.35rem}
-    .source{display:inline-block;background:rgba(59,130,246,.12);color:#93C5FD;border:1px solid rgba(59,130,246,.25);border-radius:4px;padding:0 .35rem;font-size:.75rem;margin-left:.25rem}
-    footer{text-align:center;color:var(--muted);font-size:.75rem;padding:1rem;border-top:1px solid var(--border)}
-    .loader{display:none;text-align:center;padding:2rem;color:var(--muted)}
+
+    /* ── Section heading ───────────────────────────── */
+    h2{font-size:.9375rem;font-weight:600;margin-bottom:.85rem;color:var(--text)}
+
+    /* ── Labels & inputs ───────────────────────────── */
+    label.field-label{display:block;font-size:.75rem;font-weight:500;color:var(--text-secondary);margin-bottom:.3rem;margin-top:.85rem}
+    input[type="number"],textarea{
+      width:100%;background:var(--surface);
+      border:1px solid var(--border);color:var(--text);
+      border-radius:var(--radius-sm);padding:.5rem .65rem;
+      font-family:inherit;font-size:.8125rem;
+      transition:border-color .15s ease;
+    }
+    input[type="number"]:focus,textarea:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(21,112,239,.1)}
+    textarea{resize:vertical}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:.75rem}
+
+    /* ── Checkbox rows ─────────────────────────────── */
+    .check-row{
+      display:flex;align-items:center;gap:.5rem;
+      margin-top:.65rem;cursor:pointer;user-select:none;
+      font-size:.8125rem;color:var(--text-secondary);
+    }
+    .check-row input[type="checkbox"]{
+      width:16px;height:16px;accent-color:var(--primary);cursor:pointer;
+      border-radius:3px;flex-shrink:0;
+    }
+
+    /* ── Dropzone ───────────────────────────────────── */
+    .dropzone{
+      border:1.5px dashed var(--border);border-radius:var(--radius);
+      padding:1.75rem 1rem;text-align:center;cursor:pointer;
+      color:var(--text-tertiary);font-size:.8125rem;
+      transition:border-color .15s ease, background .15s ease;
+    }
+    .dropzone:hover{border-color:var(--primary);background:var(--primary-light)}
+    .dropzone-icon{font-size:1.5rem;margin-bottom:.35rem;display:block}
+    #preview{display:none;width:100%;max-height:200px;object-fit:contain;margin-top:.75rem;border-radius:var(--radius-sm);background:var(--bg)}
+
+    /* ── Buttons ────────────────────────────────────── */
+    .btn{
+      width:100%;margin-top:1rem;border:none;border-radius:var(--radius-sm);
+      padding:.65rem;font-weight:600;cursor:pointer;font-family:inherit;
+      font-size:.8125rem;color:#fff;background:var(--primary);
+      transition:background .15s ease;
+    }
+    .btn:hover:not(:disabled){background:var(--primary-hover)}
+    .btn:disabled{opacity:.45;cursor:not-allowed}
+    .btn.secondary{background:var(--bg);border:1px solid var(--border);color:var(--text)}
+    .btn.secondary:hover:not(:disabled){background:#ECEEF1}
+
+    /* ── Language bar ───────────────────────────────── */
+    .lang-bar{display:flex;gap:2px;background:var(--bg);border-radius:var(--radius-sm);padding:3px;margin-bottom:1.25rem}
+    .btn-lang{
+      background:transparent;border:none;color:var(--text-secondary);
+      padding:.35rem .7rem;border-radius:5px;cursor:pointer;
+      font-size:.8125rem;font-weight:500;font-family:inherit;
+      transition:all .15s ease;
+    }
+    .btn-lang:hover{color:var(--text)}
+    .btn-lang.active{background:var(--surface);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.06)}
+
+    /* ── Results ────────────────────────────────────── */
+    .metric{font-size:1.75rem;font-weight:700;color:var(--text);letter-spacing:-.02em}
+    .muted{color:var(--text-tertiary);font-size:.8125rem}
+    .triage-line{color:var(--text-secondary);font-size:.8125rem;margin-top:.15rem}
+    .result-section{margin-top:1rem;padding:.85rem;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg)}
+    .result-section strong{font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.03em;color:var(--text-secondary);display:block;margin-bottom:.4rem}
+    .result-section div,.result-section ul{font-size:.8125rem;color:var(--text);line-height:1.6}
+    .result-section ul{padding-left:1.1rem}
+    .result-section li{margin-bottom:.2rem}
+    .caution{color:var(--red);font-size:.8125rem;margin-top:.3rem}
+    .source{
+      display:inline;background:var(--primary-light);color:var(--primary);
+      border-radius:3px;padding:0 .3rem;font-size:.7rem;font-weight:500;
+    }
+
+    /* ── Empty state ───────────────────────────────── */
+    .empty-state{text-align:center;padding:3rem 1rem;color:var(--text-tertiary)}
+    .empty-state .icon{font-size:2rem;margin-bottom:.5rem;display:block;opacity:.5}
+
+    /* ── Loader ─────────────────────────────────────── */
+    .loader{display:none;text-align:center;padding:2.5rem 1rem;color:var(--text-tertiary)}
+    .loader .spinner{
+      width:24px;height:24px;border:2.5px solid var(--border);border-top-color:var(--primary);
+      border-radius:50%;margin:0 auto .75rem;
+      animation:spin .7s linear infinite;
+    }
+    @keyframes spin{to{transform:rotate(360deg)}}
+
+    /* ── Footer ─────────────────────────────────────── */
+    footer{text-align:center;color:var(--text-tertiary);font-size:.7rem;padding:1.25rem;border-top:1px solid var(--border);margin-top:.5rem}
   </style>
 </head>
 <body>
 <header>
-  <div class="logo">TBScreen</div>
+  <div class="logo">TB<span>Screen</span></div>
   <div class="badge">Offline</div>
 </header>
 <main>
+  <!-- ─── Left panel ─── -->
   <section class="card">
     <div class="tabs">
       <button class="tab active" data-panel="screen">CXR Screen</button>
@@ -183,27 +289,31 @@ HTML_TEMPLATE = r"""
 
     <div id="panel-screen" class="panel active">
       <h2>Chest X-ray screening</h2>
-      <div class="dropzone" id="dropzone">Drop PNG/JPEG CXR or click to browse</div>
+      <div class="dropzone" id="dropzone">
+        <span class="dropzone-icon">📁</span>
+        Drop a PNG / JPEG chest X-ray here, or click to browse
+      </div>
       <input type="file" id="file-input" accept="image/png,image/jpeg" hidden/>
       <img id="preview" alt="CXR preview"/>
       <div class="row">
-        <div><label>Age (years)</label><input id="age_years" type="number" min="0" max="120" placeholder="e.g. 34"/></div>
-        <div><label>Cough (weeks)</label><input id="cough_weeks" type="number" min="0" max="52" placeholder="e.g. 3"/></div>
+        <div><label class="field-label">Age (years)</label><input id="age_years" type="number" min="0" max="120" placeholder="e.g. 34"/></div>
+        <div><label class="field-label">Cough (weeks)</label><input id="cough_weeks" type="number" min="0" max="52" placeholder="e.g. 3"/></div>
       </div>
-      <label><input id="has_tb_symptoms" type="checkbox"/> TB symptoms present</label>
-      <label><input id="hiv_positive" type="checkbox"/> Living with HIV</label>
-      <label><input id="household_contact" type="checkbox"/> Household TB contact</label>
-      <button class="btn" id="btn-analyze" disabled>Screen &amp; interpret</button>
+      <label class="check-row"><input id="has_tb_symptoms" type="checkbox"/> TB symptoms present</label>
+      <label class="check-row"><input id="hiv_positive" type="checkbox"/> Living with HIV</label>
+      <label class="check-row"><input id="household_contact" type="checkbox"/> Household TB contact</label>
+      <button class="btn" id="btn-analyze" disabled>Screen &amp; Interpret</button>
     </div>
 
     <div id="panel-qa" class="panel">
       <h2>Guideline Q&amp;A</h2>
-      <label>Question</label>
+      <label class="field-label">Question</label>
       <textarea id="qa-question" rows="5" placeholder="Ask a WHO-guideline grounded clinical question…"></textarea>
       <button class="btn secondary" id="btn-ask">Ask (offline RAG)</button>
     </div>
   </section>
 
+  <!-- ─── Right panel ─── -->
   <section class="card">
     <div class="lang-bar">
       <button class="btn-lang active" data-lang="English">English</button>
@@ -211,19 +321,25 @@ HTML_TEMPLATE = r"""
       <button class="btn-lang" data-lang="Hausa">Hausa</button>
       <button class="btn-lang" data-lang="Igbo">Igbo</button>
     </div>
-    <div class="loader" id="loader">Running offline ONNX + RAG + GGUF…</div>
-    <div id="empty" class="muted">Upload a CXR or ask a clinical question. Results never persist across sessions.</div>
+    <div class="loader" id="loader">
+      <div class="spinner"></div>
+      Running offline ONNX + RAG + GGUF…
+    </div>
+    <div id="empty" class="empty-state">
+      <span class="icon">🩻</span>
+      Upload a CXR or ask a clinical question.<br/>Results never persist across sessions.
+    </div>
     <div id="results" style="display:none">
       <div class="metric" id="prob">—</div>
-      <div class="muted" id="triage">—</div>
-      <div class="box"><strong>Interpretation / Answer</strong><div id="body-text"></div></div>
-      <div class="box"><strong>Recommendation</strong><div id="rec-text"></div></div>
-      <div class="box"><strong>Patient education</strong><ul id="edu-list"></ul></div>
-      <div class="box" id="cautions"></div>
+      <div class="triage-line" id="triage">—</div>
+      <div class="result-section"><strong>Interpretation / Answer</strong><div id="body-text"></div></div>
+      <div class="result-section"><strong>Recommendation</strong><div id="rec-text"></div></div>
+      <div class="result-section"><strong>Patient education</strong><ul id="edu-list"></ul></div>
+      <div class="result-section" id="cautions"></div>
     </div>
   </section>
 </main>
-<footer>TBScreen • MobileNetV3-ONNX + local GGUF • decision support only, not diagnosis</footer>
+<footer>TBScreen · MobileNetV3-ONNX + local GGUF · decision support only, not diagnosis</footer>
 <script>
   let selectedFile=null, currentLang="English", mode="screen";
   const $ = (id)=>document.getElementById(id);
@@ -252,14 +368,15 @@ HTML_TEMPLATE = r"""
   });
 
   dropzone.onclick=()=>fileInput.click();
-  dropzone.ondragover=e=>{e.preventDefault();};
-  dropzone.ondrop=e=>{e.preventDefault(); if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);};
+  dropzone.ondragover=e=>{e.preventDefault(); dropzone.style.borderColor="var(--primary)"; dropzone.style.background="var(--primary-light)";};
+  dropzone.ondragleave=e=>{dropzone.style.borderColor=""; dropzone.style.background="";};
+  dropzone.ondrop=e=>{e.preventDefault(); dropzone.style.borderColor=""; dropzone.style.background=""; if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);};
   fileInput.onchange=e=>{ if(e.target.files[0]) handleFile(e.target.files[0]); };
 
   function handleFile(file){
     selectedFile=file;
     const reader=new FileReader();
-    reader.onload=ev=>{ preview.src=ev.target.result; preview.style.display="block"; btnAnalyze.disabled=false; };
+    reader.onload=ev=>{ preview.src=ev.target.result; preview.style.display="block"; btnAnalyze.disabled=false; dropzone.innerHTML='<span class="dropzone-icon">✅</span>'+file.name; };
     reader.readAsDataURL(file);
   }
 
@@ -290,12 +407,12 @@ HTML_TEMPLATE = r"""
     empty.style.display="none"; results.style.display="block";
     const prob=Math.round((data.vision_result?.tb_probability||0)*100);
     $("prob").textContent=prob+"% TB probability";
-    $("triage").textContent=`Triage: ${(data.triage||"—").toUpperCase()} | Risk: ${data.risk_level||"—"}`;
+    $("triage").textContent="Triage: "+(data.triage||"—").toUpperCase()+" · Risk: "+(data.risk_level||"—");
     const interp=data.interpretation||{};
     $("body-text").innerHTML=withCitations(interp.interpretation||"");
     $("rec-text").innerHTML=withCitations(interp.recommendation||"");
-    $("edu-list").innerHTML=(interp.education||[]).map(p=>`<li>${withCitations(p)}</li>`).join("");
-    $("cautions").innerHTML="<strong>Cautions</strong>"+(interp.cautions||[]).map(c=>`<div class="caution">${escapeHtml(c)}</div>`).join("");
+    $("edu-list").innerHTML=(interp.education||[]).map(p=>"<li>"+withCitations(p)+"</li>").join("");
+    $("cautions").innerHTML="<strong>Cautions</strong>"+(interp.cautions||[]).map(c=>'<div class="caution">'+escapeHtml(c)+"</div>").join("");
   }
 
   function renderQA(data){
@@ -306,8 +423,8 @@ HTML_TEMPLATE = r"""
     const a=data.answer||{};
     $("body-text").innerHTML=withCitations(a.answer||"");
     $("rec-text").innerHTML=withCitations(a.recommendation||"");
-    $("edu-list").innerHTML=(a.education||[]).map(p=>`<li>${withCitations(p)}</li>`).join("");
-    $("cautions").innerHTML="<strong>Cautions</strong>"+(a.cautions||[]).map(c=>`<div class="caution">${escapeHtml(c)}</div>`).join("");
+    $("edu-list").innerHTML=(a.education||[]).map(p=>"<li>"+withCitations(p)+"</li>").join("");
+    $("cautions").innerHTML="<strong>Cautions</strong>"+(a.cautions||[]).map(c=>'<div class="caution">'+escapeHtml(c)+"</div>").join("");
   }
 
   async function postJSON(url, body){
