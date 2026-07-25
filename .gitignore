@@ -11,6 +11,7 @@ model/*.safetensors
 # llms
 CLAUDE.md
 .claude/
+.agents
 
 # docs
 docs/
