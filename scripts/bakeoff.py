@@ -1,5 +1,4 @@
-#!/usr/bin/env python3
-"""Four-language commercial model bake-off with Tiny Aya research controls."""
+"""Four-language commercial model bakeoff with Tiny Aya research controls."""
 
 from __future__ import annotations
 

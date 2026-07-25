@@ -1,5 +1,4 @@
-#!/usr/bin/env python3
-"""llama.cpp (GGUF) runtime — CPU-only inference sized for the ADTC 7 GB target."""
+"""llama.cpp (GGUF) runtime. CPU-only inference sized for the ADTC 7 GB target."""
 
 from __future__ import annotations
 

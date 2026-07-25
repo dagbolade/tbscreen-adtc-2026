@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Clinical schema, WHO-aligned triage policy, prompts, and anti-hallucination sanitizers."""
 
 from __future__ import annotations

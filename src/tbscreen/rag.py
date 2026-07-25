@@ -1,5 +1,4 @@
-#!/usr/bin/env python3
-"""Fully offline RAG: TF-IDF vectors over WHO passages — no network, no Ollama."""
+"""Offline RAG"""
 
 from __future__ import annotations
 

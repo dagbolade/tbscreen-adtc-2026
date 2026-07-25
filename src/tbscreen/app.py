@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Local Flask clinical dashboard — image screening + grounded Q&A, 100% offline."""
 
 from __future__ import annotations

@@ -1,4 +1,3 @@
-#!/usr/bin/env bash
 # Download GGUF weights for TBScreen
 #
 # Rules:

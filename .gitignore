@@ -1,4 +1,4 @@
-# LLM weights — never commit these to git
+# LLM weights
 model/*.gguf
 model/*.bin
 model/*.safetensors

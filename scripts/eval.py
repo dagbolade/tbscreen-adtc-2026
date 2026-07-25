@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Automated semantic + safety evaluation harness for TBScreen."""
 
 from __future__ import annotations

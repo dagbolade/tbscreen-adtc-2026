@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Full pipeline: chest X-ray → vision screening → topic RAG → LLM clinical interpretation."""
 
 from __future__ import annotations

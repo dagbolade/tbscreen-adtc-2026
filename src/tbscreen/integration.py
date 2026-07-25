@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Integration bridge: binds the ONNX vision model with the RAG+LLM pipeline."""
 
 from __future__ import annotations

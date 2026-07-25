@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Unit tests for Unicode tokenization, topic retrieval, and WHO triage policy."""
 
 from __future__ import annotations

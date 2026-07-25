@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Build offline TF-IDF RAG index from the WHO guidelines corpus."""
 
 from __future__ import annotations

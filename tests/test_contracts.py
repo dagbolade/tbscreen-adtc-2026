@@ -1,5 +1,4 @@
-#!/usr/bin/env python3
-"""Automated tests: ONNX smoke, offline contracts, metadata prompt paths."""
+"""Automated tests"""
 
 from __future__ import annotations
 

@@ -1,5 +1,4 @@
-#!/usr/bin/env python3
-"""E2E pipeline test using a tracked sample CXR (not an untracked local image)."""
+"""E2E pipeline test using a sample CXR."""
 
 from __future__ import annotations
 
