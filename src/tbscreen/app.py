@@ -354,14 +354,53 @@ HTML_TEMPLATE = r"""
       $("panel-"+mode).classList.add("active");
     };
   });
+  // --- Language result cache and translation state ---
+  const langCache={};        // {lang: screenData}
+  let translatingLang=null;  // lang currently being fetched
+  let translateAbort=null;   // AbortController for in-flight /translate
+
   document.querySelectorAll(".btn-lang").forEach(btn=>{
     btn.onclick=()=>{
       document.querySelectorAll(".btn-lang").forEach(b=>b.classList.remove("active"));
       btn.classList.add("active");
       currentLang=btn.dataset.lang;
-      if(mode==="screen" && results.style.display!=="none"){
-        postJSON("/translate",{lang:currentLang}).then(renderScreen).catch(()=>{});
+
+      // Only translate if we have screen results showing
+      if(mode!=="screen" || results.style.display==="none") return;
+
+      // If we already have cached results for this language, show instantly
+      if(langCache[currentLang]){
+        renderScreen(langCache[currentLang]);
+        return;
       }
+
+      // Abort any in-flight translation
+      if(translateAbort){ translateAbort.abort(); translateAbort=null; }
+
+      // Show spinner, hide stale results
+      results.style.display="none";
+      setLoading(true, "Translating to "+currentLang+"…");
+      translatingLang=currentLang;
+
+      const ctrl=new AbortController();
+      translateAbort=ctrl;
+      fetch("/translate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({lang:currentLang}),signal:ctrl.signal})
+        .then(r=>r.json())
+        .then(data=>{
+          translateAbort=null;
+          // Only render if user hasn't switched away
+          if(currentLang===translatingLang){
+            setLoading(false);
+            langCache[currentLang]=data;
+            renderScreen(data);
+          }
+        })
+        .catch(e=>{
+          translateAbort=null;
+          if(e.name==='AbortError') return; // user switched away, ignore
+          setLoading(false);
+          results.style.display="block"; // show whatever was there
+        });
     };
   });
 
@@ -455,6 +494,8 @@ HTML_TEMPLATE = r"""
 
   btnAnalyze.onclick=async()=>{
     if(!selectedFile) return;
+    // Clear language cache for new image
+    Object.keys(langCache).forEach(k=>delete langCache[k]);
     startPhases(); results.style.display="none"; btnAnalyze.disabled=true;
     const fd=new FormData();
     fd.append("file", selectedFile);
@@ -466,6 +507,7 @@ HTML_TEMPLATE = r"""
       const data=await res.json().catch(()=>({error:"Bad JSON from server (process may have crashed — check logs/tbscreen.log)"}));
       stopPhases(); btnAnalyze.disabled=false;
       if(!res.ok || data.error){ alert(data.error || ("HTTP "+res.status)); empty.style.display="block"; return; }
+      langCache[currentLang]=data;
       renderScreen(data);
     }catch(e){
       stopPhases(); btnAnalyze.disabled=false;
