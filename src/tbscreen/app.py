@@ -330,14 +330,14 @@ HTML_TEMPLATE = r"""
     <div id="results" style="display:none">
       <div class="metric" id="prob">—</div>
       <div class="triage-line" id="triage">—</div>
-      <div class="result-section"><strong>Interpretation / Answer</strong><div id="body-text"></div></div>
-      <div class="result-section"><strong>Recommendation</strong><div id="rec-text"></div></div>
-      <div class="result-section"><strong>Patient education</strong><ul id="edu-list"></ul></div>
+      <div class="result-section"><strong>What does this mean?</strong><div id="body-text"></div></div>
+      <div class="result-section"><strong>What should you do next?</strong><div id="rec-text"></div></div>
+      <div class="result-section"><strong>Important information for the patient</strong><ul id="edu-list"></ul></div>
       <div class="result-section" id="cautions"></div>
     </div>
   </section>
 </main>
-<footer>TBScreen · MobileNetV3-ONNX + local GGUF · decision support only, not diagnosis</footer>
+<footer>TBScreen · AI-assisted chest X-ray screening · decision support only, not a diagnosis</footer>
 <script>
   let selectedFile=null, currentLang="English", mode="screen";
   const $ = (id)=>document.getElementById(id);
@@ -404,33 +404,48 @@ HTML_TEMPLATE = r"""
   function escapeHtml(s){
     return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
   }
-  function withCitations(s){
-    return escapeHtml(s).replace(/\[([a-zA-Z0-9\-]+)\]/g,'<span class="source">$1</span>');
+  function stripSources(s){
+    // Remove internal passage IDs like [who-tb-screening-01] from user-facing text.
+    return escapeHtml(s).replace(/\s*\[who-[a-zA-Z0-9\-]+(?:,\s*who-[a-zA-Z0-9\-]+)*\]/g, '').replace(/\s*\[[a-zA-Z0-9\-]+\]/g, '').trim();
   }
+
+  const TRIAGE_LABELS={
+    refer: 'Further testing recommended',
+    retest: 'Follow-up screening needed',
+    monitor: 'No immediate concern — monitor',
+    symptom_followup: 'Clinical follow-up recommended',
+  };
+  const RISK_LABELS={
+    high: 'High likelihood',
+    moderate: 'Moderate likelihood',
+    low: 'Low likelihood',
+  };
 
   function renderScreen(data){
     if(data.error){ alert(data.error); return; }
     empty.style.display="none"; results.style.display="block";
     const prob=Math.round((data.vision_result?.tb_probability||0)*100);
     $("prob").textContent=prob+"% TB probability";
-    $("triage").textContent="Triage: "+(data.triage||"—").toUpperCase()+" · Risk: "+(data.risk_level||"—");
+    const triageLabel=TRIAGE_LABELS[data.triage]||data.triage||'—';
+    const riskLabel=RISK_LABELS[data.risk_level]||data.risk_level||'—';
+    $("triage").textContent=triageLabel+" · "+riskLabel;
     const interp=data.interpretation||{};
-    $("body-text").innerHTML=withCitations(interp.interpretation||"");
-    $("rec-text").innerHTML=withCitations(interp.recommendation||"");
-    $("edu-list").innerHTML=(interp.education||[]).map(p=>"<li>"+withCitations(p)+"</li>").join("");
-    $("cautions").innerHTML="<strong>Cautions</strong>"+(interp.cautions||[]).map(c=>'<div class="caution">'+escapeHtml(c)+"</div>").join("");
+    $("body-text").innerHTML=stripSources(interp.interpretation||"");
+    $("rec-text").innerHTML=stripSources(interp.recommendation||"");
+    $("edu-list").innerHTML=(interp.education||[]).map(p=>"<li>"+stripSources(p)+"</li>").join("");
+    $("cautions").innerHTML="<strong>Important safety notes</strong>"+(interp.cautions||[]).map(c=>'<div class="caution">'+stripSources(c)+"</div>").join("");
   }
 
   function renderQA(data){
     if(data.error){ alert(data.error); return; }
     empty.style.display="none"; results.style.display="block";
     $("prob").textContent="Clinical Q&A";
-    $("triage").textContent="Grounded in offline WHO passages";
+    $("triage").textContent="Answered using WHO TB guidelines";
     const a=data.answer||{};
-    $("body-text").innerHTML=withCitations(a.answer||"");
-    $("rec-text").innerHTML=withCitations(a.recommendation||"");
-    $("edu-list").innerHTML=(a.education||[]).map(p=>"<li>"+withCitations(p)+"</li>").join("");
-    $("cautions").innerHTML="<strong>Cautions</strong>"+(a.cautions||[]).map(c=>'<div class="caution">'+escapeHtml(c)+"</div>").join("");
+    $("body-text").innerHTML=stripSources(a.answer||"");
+    $("rec-text").innerHTML=stripSources(a.recommendation||"");
+    $("edu-list").innerHTML=(a.education||[]).map(p=>"<li>"+stripSources(p)+"</li>").join("");
+    $("cautions").innerHTML="<strong>Important safety notes</strong>"+(a.cautions||[]).map(c=>'<div class="caution">'+stripSources(c)+"</div>").join("");
   }
 
   async function postJSON(url, body){
