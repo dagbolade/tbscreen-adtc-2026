@@ -127,11 +127,9 @@ HTML_TEMPLATE = r"""
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>TBScreen — Offline Clinical TB Assistant</title>
+  <title>TBScreen</title>
   <meta name="description" content="TBScreen: an offline clinical decision-support tool for TB chest X-ray screening and WHO-guideline Q&A."/>
-  <link rel="preconnect" href="https://fonts.googleapis.com"/>
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+  <!-- Fonts: system-ui stack only (100% offline, no CDN dependency) -->
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     :root{
@@ -288,6 +286,7 @@ HTML_TEMPLATE = r"""
 
     <div id="panel-screen" class="panel active">
       <h2>Chest X-ray screening</h2>
+      <p style="font-size:.78rem;color:var(--text-tertiary);margin-bottom:.75rem">Only an X-ray image is required. Patient context is optional but improves triage accuracy.</p>
       <div class="dropzone" id="dropzone">
         <span class="dropzone-icon">📁</span>
         Drop a PNG / JPEG chest X-ray here, or click to browse
@@ -295,12 +294,12 @@ HTML_TEMPLATE = r"""
       <input type="file" id="file-input" accept="image/png,image/jpeg" hidden/>
       <img id="preview" alt="CXR preview"/>
       <div class="row">
-        <div><label class="field-label">Age (years)</label><input id="age_years" type="number" min="0" max="120" placeholder="e.g. 34"/></div>
-        <div><label class="field-label">Cough (weeks)</label><input id="cough_weeks" type="number" min="0" max="52" placeholder="e.g. 3"/></div>
+        <div><label class="field-label">Age <span style="font-weight:400;color:var(--text-tertiary)">(optional)</span></label><input id="age_years" type="number" min="0" max="120" placeholder="e.g. 34"/></div>
+        <div><label class="field-label">Cough duration <span style="font-weight:400;color:var(--text-tertiary)">(optional)</span></label><input id="cough_weeks" type="number" min="0" max="52" placeholder="weeks"/></div>
       </div>
-      <label class="check-row"><input id="has_tb_symptoms" type="checkbox"/> TB symptoms present</label>
-      <label class="check-row"><input id="hiv_positive" type="checkbox"/> Living with HIV</label>
-      <label class="check-row"><input id="household_contact" type="checkbox"/> Household TB contact</label>
+      <label class="check-row"><input id="has_tb_symptoms" type="checkbox"/> TB symptoms present <span style="font-size:.75rem;color:var(--text-tertiary)">(optional)</span></label>
+      <label class="check-row"><input id="hiv_positive" type="checkbox"/> Living with HIV <span style="font-size:.75rem;color:var(--text-tertiary)">(optional)</span></label>
+      <label class="check-row"><input id="household_contact" type="checkbox"/> Household TB contact <span style="font-size:.75rem;color:var(--text-tertiary)">(optional)</span></label>
       <button class="btn" id="btn-analyze" disabled>Screen &amp; Interpret</button>
     </div>
 
@@ -322,7 +321,7 @@ HTML_TEMPLATE = r"""
     </div>
     <div class="loader" id="loader">
       <div class="spinner"></div>
-      Running offline ONNX + RAG + GGUF…
+      <span id="loader-msg">Initializing…</span>
     </div>
     <div id="empty" class="empty-state">
       <span class="icon">🩻</span>
@@ -389,10 +388,18 @@ HTML_TEMPLATE = r"""
     };
   }
 
-  function setLoading(on){
+  function setLoading(on, msg){
     loader.style.display=on?"block":"none";
+    if(msg) $("loader-msg").textContent=msg;
     empty.style.display=on?"none":(results.style.display==="none"?"block":"none");
   }
+  const PHASES=["Analyzing chest X-ray…","Retrieving WHO guidelines…","Generating clinical interpretation…"];
+  let phaseTimer=null;
+  function startPhases(){
+    let i=0; setLoading(true, PHASES[0]);
+    phaseTimer=setInterval(()=>{i++;if(i<PHASES.length) $("loader-msg").textContent=PHASES[i]; else clearInterval(phaseTimer);}, 2500);
+  }
+  function stopPhases(){ if(phaseTimer){clearInterval(phaseTimer);phaseTimer=null;} setLoading(false); }
 
   function escapeHtml(s){
     return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
@@ -433,7 +440,7 @@ HTML_TEMPLATE = r"""
 
   btnAnalyze.onclick=async()=>{
     if(!selectedFile) return;
-    setLoading(true); results.style.display="none"; btnAnalyze.disabled=true;
+    startPhases(); results.style.display="none"; btnAnalyze.disabled=true;
     const fd=new FormData();
     fd.append("file", selectedFile);
     fd.append("lang", currentLang);
@@ -442,11 +449,11 @@ HTML_TEMPLATE = r"""
     try{
       const res=await fetch("/analyze",{method:"POST",body:fd});
       const data=await res.json().catch(()=>({error:"Bad JSON from server (process may have crashed — check logs/tbscreen.log)"}));
-      setLoading(false); btnAnalyze.disabled=false;
+      stopPhases(); btnAnalyze.disabled=false;
       if(!res.ok || data.error){ alert(data.error || ("HTTP "+res.status)); empty.style.display="block"; return; }
       renderScreen(data);
     }catch(e){
-      setLoading(false); btnAnalyze.disabled=false;
+      stopPhases(); btnAnalyze.disabled=false;
       alert("Request failed: "+e+". If the terminal shows GGML_ASSERT / abort, restart the app and check logs/tbscreen.log");
       empty.style.display="block";
     }
@@ -455,7 +462,7 @@ HTML_TEMPLATE = r"""
   btnAsk.onclick=async()=>{
     const question=$("qa-question").value.trim();
     if(!question){ alert("Enter a question"); return; }
-    setLoading(true); results.style.display="none";
+    setLoading(true, "Retrieving WHO guidelines…"); results.style.display="none";
     try{
       const res=await fetch("/ask",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({question, lang:currentLang})});
       const data=await res.json().catch(()=>({error:"Bad JSON from server (process may have crashed — check logs/tbscreen.log)"}));
@@ -573,5 +580,5 @@ if __name__ == "__main__":
     print(f"Starting TBScreen on http://{host}:{port}")
     print(f"Logs: {os.path.join(LOG_DIR, 'tbscreen.log')}")
     print(f"Launch alternatives:  PYTHONPATH=src:. python src/tbscreen/app.py")
-    # threaded=False: llama.cpp context must not serve concurrent requests.
-    app.run(host=host, port=port, debug=False, threaded=False)
+    # threaded=True: Flask handles concurrent HTTP; _INFER_LOCK in llm.py serializes generation.
+    app.run(host=host, port=port, debug=False, threaded=True)

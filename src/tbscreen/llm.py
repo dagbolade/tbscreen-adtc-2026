@@ -22,48 +22,54 @@ DEFAULT_MODEL = os.environ.get(
 _INFER_LOCK = threading.Lock()
 
 
-def load(model_path: str = DEFAULT_MODEL, n_ctx: int = 2048, n_threads: int | None = None) -> Llama:
-    """Load the GGUF model. Single-thread CPU mirrors ADTC and avoids ggml race aborts."""
-    threads = 1 if n_threads is None else max(1, int(n_threads))
+def load(model_path: str = DEFAULT_MODEL, n_ctx: int = 4096, n_threads: int | None = None) -> Llama:
+    """Load the GGUF model with multi-threaded CPU inference for speed scoring."""
+    threads = min(os.cpu_count() or 4, 6) if n_threads is None else max(1, int(n_threads))
     logger.info("Loading GGUF path=%s n_ctx=%s n_threads=%s", model_path, n_ctx, threads)
     return Llama(
         model_path=model_path,
         n_ctx=n_ctx,
         n_gpu_layers=0,
         n_threads=threads,
-        n_batch=256,
+        n_batch=512,
         verbose=False,
     )
 
 
+SYSTEM_PROMPT = "You are a clinical decision-support assistant. Reply in valid YAML only."
+
+
 def _wrap_chat(user: str) -> str:
-    """Gemma turn markers — more stable than jinja chat_completion on this GGUF."""
+    """Gemma turn markers — fallback when chat_completion fails."""
     return f"<start_of_turn>user\n{user}<end_of_turn>\n<start_of_turn>model\n"
 
 
 def _generate(llm: Llama, user: str, max_tokens: int, temperature: float) -> str:
-    """Serialize generation; prefer explicit Gemma template to avoid ggml set_rows aborts."""
-    prompt = _wrap_chat(user)
+    """Serialize generation; prefer chat_completion (reads GGUF template), raw prompt as fallback."""
     with _INFER_LOCK:
-        logger.info("LLM generate start max_tokens=%s prompt_chars=%s", max_tokens, len(prompt))
+        logger.info("LLM generate start max_tokens=%s prompt_chars=%s", max_tokens, len(user))
         try:
+            out = llm.create_chat_completion(
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": user},
+                ],
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+            text = out["choices"][0]["message"]["content"]
+            logger.info("LLM generate done out_chars=%s", len(text or ""))
+            return text
+        except Exception:
+            logger.exception("chat_completion failed; falling back to raw Gemma template")
+            prompt = _wrap_chat(user)
             out = llm(
                 prompt,
                 max_tokens=max_tokens,
                 temperature=temperature,
                 stop=["<end_of_turn>", "<|im_end|>"],
             )
-            text = out["choices"][0]["text"]
-            logger.info("LLM generate done out_chars=%s", len(text or ""))
-            return text
-        except Exception:
-            logger.exception("LLM completion failed; trying chat_completion fallback")
-            out = llm.create_chat_completion(
-                messages=[{"role": "user", "content": user}],
-                max_tokens=max_tokens,
-                temperature=temperature,
-            )
-            return out["choices"][0]["message"]["content"]
+            return out["choices"][0]["text"]
 
 
 def interpret(
@@ -72,7 +78,7 @@ def interpret(
     context: str,
     lang: str = "English",
     valid_sources: Iterable[str] | None = None,
-    max_tokens: int = 512,
+    max_tokens: int = 384,
     decision: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     """Generate a clinical interpretation of a TB screening result, grounded in retrieved passages."""
@@ -96,7 +102,7 @@ def answer_question(
     context: str,
     lang: str = "English",
     valid_sources: Iterable[str] | None = None,
-    max_tokens: int = 512,
+    max_tokens: int = 384,
 ) -> dict[str, Any] | None:
     """Generate a RAG-grounded clinical Q&A response (no vision input)."""
     prompt = core.qa_user_content(question, context, lang)

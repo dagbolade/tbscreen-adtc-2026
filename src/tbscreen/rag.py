@@ -173,7 +173,7 @@ class Retriever:
         k: int = 4,
         topics: list[str] | None = None,
     ) -> list[dict[str, Any]]:
-        """Return top-k language-matched passages; optional topic filter before TF-IDF rank."""
+        """Return top-k language-matched passages; cross-lingual proxy via English when needed."""
         q = embed_query(query, self.vocab, self.idf)
         target = _lang_code(lang)
         topic_set = set(topics) if topics else None
@@ -196,6 +196,26 @@ class Retriever:
 
         sub = self.vectors[indices]
         scores = _cosine_rows(q, sub)
+
+        # Cross-lingual boost: if target isn't English, score English passages too
+        # and boost target passages that share a topic with top English hits.
+        if target != "en":
+            en_indices = [
+                i for i, p in enumerate(self.passages)
+                if _lang_code(str(p.get("lang", "en"))) == "en"
+            ]
+            if en_indices:
+                en_sub = self.vectors[en_indices]
+                en_scores = _cosine_rows(q, en_sub)
+                top_en = np.argsort(-en_scores)[:k]
+                top_topics = {self.passages[en_indices[int(j)]].get("topic") for j in top_en}
+                top_topics.discard(None)
+                # Boost target passages whose topic matches a top English hit.
+                for rank, idx_pos in enumerate(range(len(indices))):
+                    p_topic = self.passages[indices[idx_pos]].get("topic")
+                    if p_topic in top_topics:
+                        scores[idx_pos] += 0.3
+
         order = np.argsort(-scores)[:k]
         return [self.passages[indices[int(j)]] for j in order]
 
