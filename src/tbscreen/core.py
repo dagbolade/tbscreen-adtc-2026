@@ -223,6 +223,7 @@ CRITICAL RULES:
 - NEVER state clinical facts not supported by the reference passages.
 - Every clinical claim must cite a source id from the references.
 - Emphasize that screening is not diagnosis and that symptomatic patients need clinical follow-up even after a negative screen.
+- If a patient screening context is provided below, the health worker is asking about THEIR OWN case: explain and answer in terms of that specific result (its probability, screen status, risk level, and triage) in plain, reassuring language. Only fall back to general guideline wording for parts of the question the result cannot answer.
 
 Reply in {lang}. Output YAML only. No markdown fences, no prose, no explanations.
 Top-level keys must be exactly: answer, recommendation, education, cautions, sources.
@@ -247,13 +248,26 @@ sources:
 Reference passages:
 {context}
 
+Patient screening context (the health worker's current case):
+{screening_summary}
+
 Question:
 {question}"""
 
 
-def qa_user_content(question: str, context: str, lang: str = "English") -> str:
+def qa_user_content(
+    question: str,
+    context: str,
+    lang: str = "English",
+    screening_summary: str | None = None,
+) -> str:
     """Build the full user prompt for grounded clinical Q&A."""
-    return QA_INSTRUCTION.format(lang=lang, context=context, question=question)
+    return QA_INSTRUCTION.format(
+        lang=lang,
+        context=context,
+        question=question,
+        screening_summary=screening_summary or "None — no screening has been performed in this session.",
+    )
 
 
 def sanitize_qa(

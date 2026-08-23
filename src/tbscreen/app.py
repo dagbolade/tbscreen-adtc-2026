@@ -267,6 +267,30 @@ HTML_TEMPLATE = r"""
     }
     @keyframes spin{to{transform:rotate(360deg)}}
 
+    /* ── Chat thread ───────────────────────────────── */
+    #qa-thread{
+      display:none;flex-direction:column;gap:.75rem;
+      max-height:640px;overflow-y:auto;padding-right:.25rem;
+    }
+    .msg-user{
+      align-self:flex-end;max-width:85%;background:var(--primary);color:#fff;
+      border-radius:12px 12px 2px 12px;padding:.55rem .8rem;
+      font-size:.8125rem;white-space:pre-wrap;word-wrap:break-word;
+    }
+    .msg-assistant{
+      align-self:flex-start;max-width:95%;
+      border:1px solid var(--border);background:var(--bg);
+      border-radius:12px 12px 12px 2px;padding:.65rem .8rem;
+    }
+    .msg-meta{font-size:.7rem;color:var(--text-tertiary);margin-bottom:.35rem}
+    .msg-answer{font-size:.8125rem;line-height:1.6;white-space:pre-wrap}
+    .msg-sub{margin-top:.55rem;font-size:.75rem;color:var(--text-secondary)}
+    .msg-sub strong{display:block;font-weight:600;text-transform:uppercase;letter-spacing:.03em;font-size:.68rem;margin-bottom:.2rem;color:var(--text-secondary)}
+    .msg-sub ul{padding-left:1.1rem}
+    .msg-sub li{margin-bottom:.2rem;font-size:.8125rem;color:var(--text)}
+    .msg-sub .caution{margin-top:.2rem}
+    .msg-pending{color:var(--text-tertiary);font-size:.8125rem;font-style:italic}
+
     /* ── Footer ─────────────────────────────────────── */
     footer{text-align:center;color:var(--text-tertiary);font-size:.7rem;padding:1.25rem;border-top:1px solid var(--border);margin-top:.5rem}
   </style>
@@ -305,8 +329,9 @@ HTML_TEMPLATE = r"""
 
     <div id="panel-qa" class="panel">
       <h2>Guideline Q&amp;A</h2>
+      <p style="font-size:.78rem;color:var(--text-tertiary);margin-bottom:.75rem">Ask about your screening result or WHO TB guidelines. Press <strong>Enter</strong> to send, <strong>Shift+Enter</strong> for a new line.</p>
       <label class="field-label">Question</label>
-      <textarea id="qa-question" rows="5" placeholder="Ask a WHO-guideline grounded clinical question…"></textarea>
+      <textarea id="qa-question" rows="3" placeholder="e.g. Can you explain the results better to me?"></textarea>
       <button class="btn secondary" id="btn-ask">Ask (offline RAG)</button>
     </div>
   </section>
@@ -335,15 +360,35 @@ HTML_TEMPLATE = r"""
       <div class="result-section"><strong>Important information for the patient</strong><ul id="edu-list"></ul></div>
       <div class="result-section" id="cautions"></div>
     </div>
+    <div id="qa-thread"></div>
   </section>
 </main>
 <footer>TBScreen · AI-assisted chest X-ray screening · decision support only, not a diagnosis</footer>
 <script>
   let selectedFile=null, currentLang="English", mode="screen";
+  let lastScreenData=null;  // last rendered screening result (any language)
+  let analyzing=false;      // an /analyze request is in flight
+  let qaBusy=false;         // an /ask request is in flight
+  let screenGen=0;          // bumped per new image; invalidates stale translations
   const $ = (id)=>document.getElementById(id);
   const dropzone=$("dropzone"), fileInput=$("file-input"), preview=$("preview");
   const btnAnalyze=$("btn-analyze"), btnAsk=$("btn-ask"), loader=$("loader");
-  const empty=$("empty"), results=$("results");
+  const empty=$("empty"), results=$("results"), qaThread=$("qa-thread");
+
+  // Decide which right-panel view is visible: chat thread (QA) or screen results.
+  function updateRightPanel(){
+    if(mode==="qa"){
+      qaThread.style.display="flex";
+      results.style.display="none";
+      loader.style.display="none";
+      empty.style.display=qaThread.children.length?"none":"block";
+    }else{
+      qaThread.style.display="none";
+      if(analyzing){ loader.style.display="block"; results.style.display="none"; empty.style.display="none"; }
+      else if(lastScreenData){ results.style.display="block"; empty.style.display="none"; }
+      else{ results.style.display="none"; empty.style.display="block"; }
+    }
+  }
 
   document.querySelectorAll(".tab").forEach(btn=>{
     btn.onclick=()=>{
@@ -352,12 +397,51 @@ HTML_TEMPLATE = r"""
       mode=btn.dataset.panel;
       document.querySelectorAll(".panel").forEach(p=>p.classList.remove("active"));
       $("panel-"+mode).classList.add("active");
+      updateRightPanel();
     };
   });
-  // --- Language result cache and translation state ---
-  const langCache={};        // {lang: screenData}
-  let translatingLang=null;  // lang currently being fetched
-  let translateAbort=null;   // AbortController for in-flight /translate
+  // --- Language result cache and per-language translation state ---
+  const langCache={};            // {lang: screenData}
+  const pendingTranslations={};  // {lang: Promise} — one in-flight /translate per language
+
+  function ensureTranslation(lang){
+    // Reuse an in-flight translation instead of issuing a duplicate request.
+    if(pendingTranslations[lang]){
+      if(mode==="screen" && currentLang===lang){
+        results.style.display="none";
+        setLoading(true, "Translating to "+lang+"…");
+      }
+      return pendingTranslations[lang];
+    }
+    const gen=screenGen; // drop completions that predate the latest image
+    results.style.display="none";
+    setLoading(true, "Translating to "+lang+"…");
+    const p=fetch("/translate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({lang})})
+      .then(r=>r.json())
+      .then(data=>{
+        delete pendingTranslations[lang];
+        if(gen!==screenGen) return data; // stale: a new image was analyzed meanwhile
+        if(!data.error) langCache[lang]=data; // cache even if the user switched away mid-flight
+        if(mode==="screen" && currentLang===lang){
+          if(data.error){ alert(data.error); restoreScreenView(); }
+          else renderScreen(data);
+        }
+        return data;
+      })
+      .catch(()=>{
+        delete pendingTranslations[lang];
+        if(gen===screenGen && mode==="screen" && currentLang===lang) restoreScreenView();
+        return null;
+      });
+    pendingTranslations[lang]=p;
+    return p;
+  }
+
+  function restoreScreenView(){
+    setLoading(false);
+    if(lastScreenData){ renderScreen(lastScreenData); }
+    else{ results.style.display="none"; empty.style.display="block"; }
+  }
 
   document.querySelectorAll(".btn-lang").forEach(btn=>{
     btn.onclick=()=>{
@@ -365,42 +449,18 @@ HTML_TEMPLATE = r"""
       btn.classList.add("active");
       currentLang=btn.dataset.lang;
 
-      // Only translate if we have screen results showing
-      if(mode!=="screen" || results.style.display==="none") return;
+      // Language results only apply to the screening view; without any cached
+      // screen there is nothing to re-render or translate yet.
+      if(mode!=="screen" || Object.keys(langCache).length===0) return;
 
-      // If we already have cached results for this language, show instantly
+      // Cached language renders instantly — even while another language is
+      // still loading in the background (its completion fills the cache).
       if(langCache[currentLang]){
         renderScreen(langCache[currentLang]);
+        setLoading(false);
         return;
       }
-
-      // Abort any in-flight translation
-      if(translateAbort){ translateAbort.abort(); translateAbort=null; }
-
-      // Show spinner, hide stale results
-      results.style.display="none";
-      setLoading(true, "Translating to "+currentLang+"…");
-      translatingLang=currentLang;
-
-      const ctrl=new AbortController();
-      translateAbort=ctrl;
-      fetch("/translate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({lang:currentLang}),signal:ctrl.signal})
-        .then(r=>r.json())
-        .then(data=>{
-          translateAbort=null;
-          // Only render if user hasn't switched away
-          if(currentLang===translatingLang){
-            setLoading(false);
-            langCache[currentLang]=data;
-            renderScreen(data);
-          }
-        })
-        .catch(e=>{
-          translateAbort=null;
-          if(e.name==='AbortError') return; // user switched away, ignore
-          setLoading(false);
-          results.style.display="block"; // show whatever was there
-        });
+      ensureTranslation(currentLang);
     };
   });
 
@@ -462,7 +522,7 @@ HTML_TEMPLATE = r"""
 
   function renderScreen(data){
     if(data.error){ alert(data.error); return; }
-    empty.style.display="none"; results.style.display="block";
+    lastScreenData=data;
     const prob=Math.round((data.vision_result?.tb_probability||0)*100);
     $("prob").textContent=prob+"% TB probability";
     const triageLabel=TRIAGE_LABELS[data.triage]||data.triage||'—';
@@ -473,18 +533,37 @@ HTML_TEMPLATE = r"""
     $("rec-text").innerHTML=stripSources(interp.recommendation||"");
     $("edu-list").innerHTML=(interp.education||[]).map(p=>"<li>"+stripSources(p)+"</li>").join("");
     $("cautions").innerHTML="<strong>Important safety notes</strong>"+(interp.cautions||[]).map(c=>'<div class="caution">'+stripSources(c)+"</div>").join("");
+    if(mode==="screen"){ empty.style.display="none"; results.style.display="block"; }
   }
 
-  function renderQA(data){
-    if(data.error){ alert(data.error); return; }
-    empty.style.display="none"; results.style.display="block";
-    $("prob").textContent="Clinical Q&A";
-    $("triage").textContent="Answered using WHO TB guidelines";
-    const a=data.answer||{};
-    $("body-text").innerHTML=stripSources(a.answer||"");
-    $("rec-text").innerHTML=stripSources(a.recommendation||"");
-    $("edu-list").innerHTML=(a.education||[]).map(p=>"<li>"+stripSources(p)+"</li>").join("");
-    $("cautions").innerHTML="<strong>Important safety notes</strong>"+(a.cautions||[]).map(c=>'<div class="caution">'+stripSources(c)+"</div>").join("");
+  // --- Chat thread ---
+  function scrollThread(){ qaThread.scrollTop=qaThread.scrollHeight; }
+  function appendUserMsg(q){
+    const el=document.createElement("div");
+    el.className="msg-user";
+    el.textContent=q; // textContent assignment is XSS-safe
+    qaThread.appendChild(el);
+    scrollThread();
+  }
+  function appendPendingMsg(){
+    const el=document.createElement("div");
+    el.className="msg-assistant";
+    el.innerHTML='<div class="msg-pending">Retrieving WHO guidelines &amp; answering…</div>';
+    qaThread.appendChild(el);
+    scrollThread();
+    return el;
+  }
+  function renderAssistantMsg(el, m){
+    const a=m.answer||{};
+    const meta="TBScreen"+(m.lang?" · "+escapeHtml(m.lang):"")+(m.hasCtx?" · based on your screening result":" · WHO guideline lookup");
+    let html='<div class="msg-meta">'+meta+'</div>'
+      +'<div class="msg-answer">'+stripSources(a.answer||"No structured answer was produced — please rephrase and try again.")+'</div>';
+    if(a.recommendation) html+='<div class="msg-sub"><strong>Next steps</strong>'+stripSources(a.recommendation)+'</div>';
+    if((a.education||[]).length) html+='<div class="msg-sub"><strong>Patient education</strong><ul>'+a.education.map(p=>"<li>"+stripSources(p)+"</li>").join("")+'</ul></div>';
+    if((a.cautions||[]).length) html+='<div class="msg-sub"><strong>Safety notes</strong>'+a.cautions.map(c=>'<div class="caution">'+stripSources(c)+'</div>').join("")+'</div>';
+    el.className="msg-assistant";
+    el.innerHTML=html;
+    scrollThread();
   }
 
   async function postJSON(url, body){
@@ -494,8 +573,12 @@ HTML_TEMPLATE = r"""
 
   btnAnalyze.onclick=async()=>{
     if(!selectedFile) return;
-    // Clear language cache for new image
+    // New image = new patient: drop cached translations and the chat thread.
+    screenGen++;
     Object.keys(langCache).forEach(k=>delete langCache[k]);
+    lastScreenData=null;
+    qaThread.innerHTML="";
+    analyzing=true;
     startPhases(); results.style.display="none"; btnAnalyze.disabled=true;
     const fd=new FormData();
     fd.append("file", selectedFile);
@@ -505,33 +588,52 @@ HTML_TEMPLATE = r"""
     try{
       const res=await fetch("/analyze",{method:"POST",body:fd});
       const data=await res.json().catch(()=>({error:"Bad JSON from server (process may have crashed — check logs/tbscreen.log)"}));
-      stopPhases(); btnAnalyze.disabled=false;
-      if(!res.ok || data.error){ alert(data.error || ("HTTP "+res.status)); empty.style.display="block"; return; }
+      stopPhases(); analyzing=false; btnAnalyze.disabled=false;
+      if(!res.ok || data.error){ alert(data.error || ("HTTP "+res.status)); updateRightPanel(); return; }
       langCache[currentLang]=data;
       renderScreen(data);
+      updateRightPanel();
     }catch(e){
-      stopPhases(); btnAnalyze.disabled=false;
+      stopPhases(); analyzing=false; btnAnalyze.disabled=false;
       alert("Request failed: "+e+". If the terminal shows GGML_ASSERT / abort, restart the app and check logs/tbscreen.log");
-      empty.style.display="block";
+      updateRightPanel();
     }
   };
 
-  btnAsk.onclick=async()=>{
-    const question=$("qa-question").value.trim();
+  async function submitQuestion(){
+    const ta=$("qa-question");
+    const question=ta.value.trim();
     if(!question){ alert("Enter a question"); return; }
-    setLoading(true, "Retrieving WHO guidelines…"); results.style.display="none";
+    if(qaBusy) return; // LLM generation serializes server-side; one question at a time
+    qaBusy=true; btnAsk.disabled=true;
+    ta.value="";
+    appendUserMsg(question);
+    const pendEl=appendPendingMsg();
     try{
       const res=await fetch("/ask",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({question, lang:currentLang})});
       const data=await res.json().catch(()=>({error:"Bad JSON from server (process may have crashed — check logs/tbscreen.log)"}));
-      setLoading(false);
-      if(!res.ok || data.error){ alert(data.error || ("HTTP "+res.status)); empty.style.display="block"; return; }
-      renderQA(data);
+      if(!res.ok || data.error){
+        pendEl.remove();
+        alert(data.error || ("HTTP "+res.status));
+        return;
+      }
+      renderAssistantMsg(pendEl, {
+        answer:data.answer||{},
+        lang:currentLang,
+        hasCtx:!!data.has_screen_context,
+      });
     }catch(e){
-      setLoading(false);
+      pendEl.remove();
       alert("Request failed: "+e+". Server may have crashed — check logs/tbscreen.log");
-      empty.style.display="block";
+    }finally{
+      qaBusy=false; btnAsk.disabled=false;
+      ta.focus();
     }
-  };
+  }
+  btnAsk.onclick=submitQuestion;
+  $("qa-question").addEventListener("keydown",e=>{
+    if(e.key==="Enter" && !e.shiftKey && !e.isComposing){ e.preventDefault(); submitQuestion(); }
+  });
 </script>
 </body>
 </html>

@@ -44,6 +44,21 @@ class TestPromptContracts(unittest.TestCase):
         self.assertIn("answer", prompt)
         self.assertIn("Hausa", prompt)
 
+    def test_qa_prompt_includes_screening_summary(self):
+        prompt = core.qa_user_content(
+            "Explain my result",
+            "[who-tb-screening-01] text",
+            "English",
+            screening_summary="TB probability: 78.3%\nRisk level: high",
+        )
+        self.assertIn("TB probability: 78.3%", prompt)
+        self.assertIn("patient screening context", prompt.lower())
+        self.assertIn("personalize", prompt.lower())
+
+    def test_qa_prompt_without_screening_summary(self):
+        prompt = core.qa_user_content("What is screening?", "[who-tb-screening-01] text", "English")
+        self.assertIn("no screening", prompt.lower())
+
 
 class TestMetadataPromptPaths(unittest.TestCase):
     def test_metadata_has_two_prompts(self):
@@ -72,6 +87,37 @@ class TestMetadataPromptPaths(unittest.TestCase):
             out = pipeline.answer_clinical_question(FakeLLM(), retriever, question, lang="English", k=3)
             self.assertTrue(out["retrieved_sources"])
             self.assertIn("answer", out["answer"])
+            self.assertFalse(out["has_screen_context"])
+
+    def test_qa_path_threads_screening_context(self):
+        corpus = ROOT / "corpus" / "sources" / "who_tb_guidelines.jsonl"
+        retriever = Retriever.from_jsonl(corpus)
+
+        class FakeLLM:
+            pass
+
+        vision_result = {"tb_probability": 0.783, "screening_result": "POSITIVE"}
+        with mock.patch("tbscreen.pipeline.llm.answer_question") as mocked:
+            mocked.return_value = {
+                "answer": "Personalized.",
+                "recommendation": "Refer.",
+                "education": ["TB is curable."],
+                "cautions": ["This is decision support, not a diagnosis."],
+                "sources": ["who-tb-screening-01"],
+            }
+            out = pipeline.answer_clinical_question(
+                FakeLLM(),
+                retriever,
+                "Can you explain the results better to me?",
+                vision_result=vision_result,
+                patient_context={"age_years": 34},
+            )
+            self.assertTrue(out["has_screen_context"])
+            summary = mocked.call_args.kwargs.get("screening_summary")
+            self.assertIn("78.3%", summary)
+            self.assertIn("refer", summary)
+            # Triage-topic passages for this decision are merged into grounding.
+            self.assertGreaterEqual(len(out["retrieved_sources"]), 1)
 
 
 class TestOfflineIndex(unittest.TestCase):

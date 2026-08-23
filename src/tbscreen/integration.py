@@ -98,11 +98,13 @@ class TBScreenAssistant:
         )
 
     def ask(self, question: str, lang: str = "English") -> dict[str, Any]:
-        """Grounded clinical Q&A without vision (metadata test-prompt path)."""
+        """Grounded clinical Q&A; personalized when a screening result is cached."""
         return pipeline.answer_clinical_question(
             model=self.llm,
             retriever=self.retriever,
             question=question,
             lang=lang,
             k=4,
+            vision_result=self._last_vision_result,
+            patient_context=self._last_patient_context,
         )

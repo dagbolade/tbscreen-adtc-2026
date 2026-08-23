@@ -103,9 +103,10 @@ def answer_question(
     lang: str = "English",
     valid_sources: Iterable[str] | None = None,
     max_tokens: int = 384,
+    screening_summary: str | None = None,
 ) -> dict[str, Any] | None:
-    """Generate a RAG-grounded clinical Q&A response (no vision input)."""
-    prompt = core.qa_user_content(question, context, lang)
+    """Generate a RAG-grounded clinical Q&A response, personalized when a screening summary is given."""
+    prompt = core.qa_user_content(question, context, lang, screening_summary=screening_summary)
     raw = _generate(llm, prompt, max_tokens, temperature=0.2)
     parsed = core.parse_yaml(raw)
     return core.sanitize_qa(parsed, valid_sources=valid_sources)
