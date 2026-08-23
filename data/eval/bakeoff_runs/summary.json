@@ -1,0 +1,73 @@
+{
+  "seed": 42,
+  "selection_rule": "Winner must be commercial/pilot-compatible. Tiny Aya is research-only. Qwen 2.5 3B / Llama 3.2 3B re-downloads skipped per user; transcript evidence accepted. Qwen3.5-4B rejected for llama.cpp portability.",
+  "selection": {
+    "winner": "gemma4-e2b-q4km",
+    "display_name": "Gemma 4 E2B IT Q4_K_M",
+    "reason": "best commercial candidate on parse/triage/worst-language/citation/latency/rss",
+    "summary": {
+      "parse_rate": 1.0,
+      "triage_rate": 1.0,
+      "citation_rate": 1.0,
+      "safety_rate": 1.0,
+      "avg_latency_sec": 13.805818181818182,
+      "peak_rss_mb": 3126.6,
+      "under_7gb": true,
+      "worst_non_english_lang": "Yoruba",
+      "worst_non_english_parse_rate": 1.0
+    }
+  },
+  "skipped_candidates": [
+    {
+      "candidate_id": "qwen35-4b",
+      "role": "rejected_portability",
+      "skipped": true,
+      "evidence": "docs/claude_chat_transcript.md — qwen35 hybrid SSM/attention does not load in standard llama-cpp-python; disqualification risk"
+    },
+    {
+      "candidate_id": "qwen25-3b-q4km",
+      "role": "skipped_per_user",
+      "skipped": true,
+      "evidence": "Trusted from prior transcript model bake-off conclusions; download interrupted by user request 2026-07-20"
+    },
+    {
+      "candidate_id": "llama32-3b-q4km",
+      "role": "skipped_per_user",
+      "skipped": true,
+      "evidence": "Trusted from prior transcript: weaker African-language coverage vs Gemma; download interrupted by user request 2026-07-20"
+    },
+    {
+      "candidate_id": "tiny-aya-earth-q4km",
+      "role": "research_control",
+      "skipped": true,
+      "evidence": "Research comparator only; not downloaded in this iteration (CC-BY-NC blocks final pick)."
+    },
+    {
+      "candidate_id": "tiny-aya-global-q4km",
+      "role": "research_control",
+      "skipped": true,
+      "evidence": null
+    }
+  ],
+  "results": [
+    {
+      "candidate_id": "gemma4-e2b-q4km",
+      "role": "commercial_candidate",
+      "load_ok": true,
+      "summary": {
+        "parse_rate": 1.0,
+        "triage_rate": 1.0,
+        "citation_rate": 1.0,
+        "safety_rate": 1.0,
+        "avg_latency_sec": 13.805818181818182,
+        "peak_rss_mb": 3126.6,
+        "under_7gb": true,
+        "worst_non_english_lang": "Yoruba",
+        "worst_non_english_parse_rate": 1.0
+      },
+      "error": null,
+      "skipped": null,
+      "evidence": null
+    }
+  ]
+}
