@@ -18,7 +18,7 @@ Public repo: https://github.com/dagbolade/tbscreen-adtc-2026
 | `language_scope`             | `en`, `yo`, `ha`, `ig`                                                                                                                         |
 | `african_alpha_claim`        | `true` (four-language UI + localized corpus)                                                                                                         |
 | `budget_laptop_claim`        | `true` (peak RSS ~3.1-3.3 GB vs 7 GB budget)                                                                                                         |
-| `submitter`                  | David Agbolade · dagbolade72@gmail.com · github.com/dagbolade                                                                                        |
+| `submitter`                  | Abdulraqib Omotosho · abdulraqibshakir03@gmail.com · github.com/Abdulraqib20                                                                                        |
 | `cross_disciplinary_pairing` | `computer_vision`, load-bearing (MobileNetV3 ONNX screener feeds the LLM pipeline)                                                                   |
 | `test_prompts`               | exactly 2:`tp_001` (explain a 78.3% CXR screen for a symptomatic 34-year-old) and `tp_002` (positive screen vs confirmed diagnosis at a rural PHC) |
 | `model`                      | `gemma-4-E2B-it-Q4_K_M`, runtime `llama.cpp`, quantization `GGUF Q4_K_M`, ~2.6B effective, packaging `binary_bundle`                           |
@@ -35,7 +35,7 @@ Public repo: https://github.com/dagbolade/tbscreen-adtc-2026
 - [X] Offline TF-IDF index committed at `corpus/index/`
 - [X] Clinical Q&A path (`TBScreenAssistant.ask` / `POST /ask`) aligned with the test prompts
 - [X] Linux validation: Ubuntu 22.04 container at 4 CPUs / 8 GB, 19/19 unit tests, full e2e pass, peak RSS 3.33 GB (details in REPORT.md)
-- [X] Participant profiler run recorded (16.73 tok/s, RSS 2135 MB; Sperf 100.0, Seff 69.5; see REPORT.md)
+- [X] Participant profiler run recorded in an Ubuntu 22.04 container at 4 vCPUs / 8 GB (2.62 tok/s, RSS 3215 MB; Sperf 17.5, Seff 54.1; see REPORT.md)
 - [X] Official-laptop (Ubuntu 22.04 / i5 / 8 GB) profiler numbers: measured by the audit sandbox
 - [X] 2-minute demo video: submitted on DevPost
 
@@ -86,9 +86,8 @@ Gate 1 deadline: **August 25, 2026**. Official profiler target: Ubuntu 22.04 / 8
 
 ```bash
 pip install "git+https://github.com/Africa-Deep-Tech-Foundation/adtc-profiler.git"
-# The profiler needs llama-bench on PATH:
-#   macOS: brew install llama.cpp    Linux: build llama.cpp (the source is vendored
-#   inside the llama-cpp-python sdist, so the exact runtime version can be rebuilt)
+# The profiler needs llama-bench on PATH; on Linux, build llama.cpp (its source is
+# vendored inside the llama-cpp-python sdist, so the exact runtime can be rebuilt)
 bash download_model.sh
 adtc-profiler run \
   --submission . \
@@ -97,7 +96,7 @@ adtc-profiler run \
   --skip-accuracy
 ```
 
-A valid run produces `submission.json` with `"measured_on": "participant_laptop"`. Our recorded run: 16.73 tok/s generation, 2135 MB peak RSS, no throttling (Apple M1 Pro participant machine; REPORT.md explains what does and does not transfer to the target laptop).
+A valid run produces `submission.json` with `"measured_on": "participant_laptop"`. Our recorded run, inside an Ubuntu 22.04.5 container pinned to 4 vCPUs and 8 GB with swap disabled: 2.62 tok/s generation (4.19 tok/s on a thread-matched llama-bench), 3215 MB peak RSS, no throttling. Self-reported scores: Sperf 17.5, Seff 54.1 (formulas and details in REPORT.md).
 
 ## Rules honored
 
