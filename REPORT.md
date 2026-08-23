@@ -32,9 +32,9 @@ Community health workers in high-burden TB settings often have chest X-ray acces
 
 **Official profiler (participant laptop, not the ADTC Standard Laptop).** From `submission.json` via `adtc-profiler` on Apple M1 Pro 16 GB: 48.65 tok/s generation, 811 ms TTFT, peak RSS 1869.8 MB (llama-bench path), no thermal throttle. These numbers must be re-run on Ubuntu 22.04 / 8 GB before Gate 1 freeze; they are not target-hardware scores.
 
-**Full application profile (same M1 Pro participant machine).** Artifact: `data/eval/pipeline_profile.json`. Vision 0.56 s; LLM cold load 6.65 s; warm screen+RAG+LLM 23.7 s; Q&A 16.7 s; peak RSS ~3.14 GB. Screen and Q&A YAML both parsed.
+**Full application profile (same M1 Pro participant machine).** Vision 0.56 s; LLM cold load 6.65 s; warm screen+RAG+LLM 23.7 s; Q&A 16.7 s; peak RSS ~3.14 GB. Screen and Q&A YAML both parsed.
 
-**Vision smoke (not validation).** `samples/` Shenzhen 20-image set at threshold 0.65: sensitivity 100%, specificity 60% (`data/eval/vision_smoke.json`). No AUC is claimed in this report; no held-out patient-level validation artifact is currently committed.
+**Vision smoke (not validation).** `samples/` Shenzhen 20-image set at threshold 0.65: sensitivity 100%, specificity 60%. No AUC is claimed in this report; no held-out patient-level validation artifact is currently committed.
 
 **Harness.** `scripts/eval.py` and `scripts/bakeoff.py` exercise the frozen cases (schema, triage policy, citation faithfulness, safety text) across en/yo/ha/ig. Automated unit tests cover Unicode retrieval, topic RAG, ONNX smoke, and metadata prompt paths.
 

@@ -205,7 +205,6 @@ PYTHONPATH=src:. python src/tbscreen/app.py
 # UI: http://127.0.0.1:5000  (CXR screen + Clinical Q&A)
 
 python scripts/eval.py
-python scripts/vision_smoke.py
 python scripts/bakeoff.py --candidate gemma4-e2b-q4km
 python tests/test_e2e_pipeline.py
 python -m unittest tests.test_retrieval_policy tests.test_contracts
