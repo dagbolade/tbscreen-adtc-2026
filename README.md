@@ -196,6 +196,8 @@ View the full eligibility rules at [adtc-2026.devpost.com/rules](https://adtc-20
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
+# Linux (e.g. Ubuntu 22.04): sudo apt install -y build-essential cmake
+# (llama-cpp-python ships no manylinux wheels and compiles from source)
 pip install -r requirements.txt
 bash download_model.sh
 python scripts/build_rag_index.py   # after corpus edits
