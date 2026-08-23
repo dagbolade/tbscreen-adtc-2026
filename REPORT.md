@@ -30,7 +30,7 @@ Community health workers in high-burden TB settings often have chest X-ray acces
 
 ## Benchmarks
 
-**Official profiler (participant laptop, not the ADTC Standard Laptop).** From `submission.json` via `adtc-profiler` on Apple M1 Pro 16 GB: 48.65 tok/s generation, 811 ms TTFT, peak RSS 1869.8 MB (llama-bench path), no thermal throttle. These numbers must be re-run on Ubuntu 22.04 / 8 GB before Gate 1 freeze; they are not target-hardware scores.
+**Official profiler (participant laptop, not the ADTC Standard Laptop).** From `submission.json` via `adtc-profiler 0.1.0` on Apple M1 Pro 16 GB at commit `f9f9de8`: 16.73 tok/s generation (512-prompt / 128-gen llama-bench), 7.16 s first-token latency for a 512-token prompt, peak RSS 2135 MB, no thermal throttling. Self-reported scores per the profiler formulas: Sperf = min(16.73/15.0, 1.0)×100 = **100.0** (capped) and Seff = (7.0−2.135)/7.0×100 = **69.5**. These are participant-machine numbers; the audit re-measures on the 4-core / 8 GB sandbox.
 
 **Full application profile (same M1 Pro participant machine).** Vision 0.56 s; LLM cold load 6.65 s; warm screen+RAG+LLM 23.7 s; Q&A 16.7 s; peak RSS ~3.14 GB. Screen and Q&A YAML both parsed.
 
@@ -38,4 +38,4 @@ Community health workers in high-burden TB settings often have chest X-ray acces
 
 **Harness.** `scripts/eval.py` and `scripts/bakeoff.py` exercise the frozen cases (schema, triage policy, citation faithfulness, safety text) across en/yo/ha/ig. Automated unit tests cover Unicode retrieval, topic RAG, ONNX smoke, and metadata prompt paths.
 
-**Limitations.** (1) Target-laptop profiler output is still outstanding. (2) Localized corpus passages are paraphrases pending native clinician approval. (3) African-language quality for the bonus should be treated as harness-supported, not clinician-verified, until `native_review_pending.json` is completed. (4) `team_id` 1064863 should match the ADTF portal at submit time (`submission.json` still shows an older interim id from a prior profiler run).
+**Limitations.** (1) Target-laptop profiler output is still outstanding — participant numbers above are from an Apple M1 Pro, not the Ubuntu 22.04 / 8 GB ADTC Standard Laptop. (2) Localized corpus passages are paraphrases pending native clinician approval. (3) African-language quality for the bonus should be treated as harness-supported, not clinician-verified, until `native_review_pending.json` is completed. (4) `team_id` 1064863 now flows correctly into `submission.json`; confirm it against the ADTF/DevPost registration at submit time.
