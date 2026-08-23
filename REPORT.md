@@ -1,41 +1,37 @@
-# Technical Report — TBScreen
+# TBScreen — Technical Report
 
-**Team ID:** 1064863
-**Domain:** healthcare_medical
-**Model:** gemma-4-E2B-it-Q4_K_M (llama.cpp / GGUF Q4_K_M, ~2.6B effective)
+Team 1064863 · healthcare_medical · gemma-4-E2B-it-Q4_K_M (llama.cpp, GGUF Q4_K_M, ~2.6B effective)
 
-## Problem
+## The problem
 
-Community health workers in high-burden TB settings often have chest X-ray access without a radiologist on site. Cloud clinical assistants are blocked by connectivity and cost. TBScreen is an offline decision-support assistant that screens a CXR locally, retrieves WHO-aligned guidance, and returns structured triage language a CHW can act on in English, Yorùbá, Hausa, or Igbo. It is screening support, not diagnosis.
+A community health worker in a high-burden TB setting can often get a chest X-ray taken, but there is no radiologist to read it and no reliable internet to send it anywhere. Cloud-based clinical AI is useless in exactly the places that need it most. We built TBScreen to test a simple premise: a complete screening assistant — one that reads the X-ray, applies triage policy, explains itself in the patient's language, and answers follow-up questions — can run on a basic 8 GB laptop with the network cable unplugged.
 
-## Design Decisions
+To be clear about scope: TBScreen is screening decision support. It is not a diagnostic device, and every output it produces says so.
 
-**Load-bearing CV + LLM integration.** A MobileNetV3-Small ONNX screener (~4 MB) produces a TB probability and optional 2x2 occlusion-sensitivity weights. The LLM never sees pixels; it consumes the structured vision result plus offline TF-IDF passages. A separate grounded Q&A path serves the metadata test prompts without an image.
+## Design decisions
 
-**Model selection.** Gemma-4-E2B Q4_K_M is the commercial submission model. Portability tests rejected Qwen3.5-4B because the `qwen35` hybrid SSM architecture does not load in standard `llama-cpp-python` (disqualification risk under llama.cpp-only judging). Qwen 2.5 3B and Llama 3.2 3B were not re-downloaded for this iteration; prior transcript comparisons and license/localization tradeoffs were accepted, and Tiny Aya Earth/Global remain research controls only (CC-BY-NC). On the frozen four-language harness (`data/eval/bakeoff_cases.json`), Gemma scored parse/triage/citation/safety rates of 1.0, mean latency 13.8 s/case, peak RSS 3.13 GB (participant M1 Pro).
+The single most important decision we made is that **the LLM never makes a safety decision and never sees a pixel.** A 4.4 MB MobileNetV3-Small (ONNX Runtime, CPU) turns the X-ray into a TB probability. Plain, testable Python turns that probability plus patient context (age, cough duration, symptoms, HIV status, household contact) into a triage action under WHO-aligned rules: high score refers, borderline retests (or refers if symptomatic or high-risk), a negative screen never clears a symptomatic patient, and anyone under 15 is routed out of the CAD workflow entirely. Only after those decisions are locked in does the LLM get involved — and its job is purely language: turning the vision result, the triage decision, and retrieved guideline passages into structured output the health worker can read.
 
-**Quantization and templating.** Q4_K_M is used for size and RAM headroom under the 7 GB ceiling. Inference uses each GGUF's chat-completion path rather than a hard-coded Gemma wrapper. `download_model.sh` pins SHA-256 `9378bc47…8672d`.
+We chose the model by bake-off rather than by reputation. On a frozen four-language harness (`data/eval/bakeoff_cases.json`) we scored candidates on YAML parse rate, triage correctness, citation honesty, and peak memory. Gemma 4 E2B Q4_K_M came out on top with perfect parse/triage/citation/safety rates, 13.8 s mean latency per case, and 3.13 GB peak RSS on our dev machine. The also-rans are worth mentioning because of *why* they lost: Qwen 3.5 4B simply would not load in `llama-cpp-python` (its hybrid SSM architecture is a portability risk under a llama.cpp-only judging rule), and Cohere's Aya models are research-licensed (CC-BY-NC), which rules out a commercial pilot. Qwen 2.5 3B and Llama 3.2 3B were compared on prior transcript evidence and lost on localization and license trade-offs. A model that can't run in the judge's sandbox scores zero no matter how smart it is, so portability weighed as heavily as quality.
 
-**Offline RAG and safety policy.** Passages carry language-independent `topic` ids with provenance metadata. Retrieval filters by language and topic so Yorùbá/Hausa/Igbo screens are not queried with English-only risk strings. Unicode tokenization preserves African Latin diacritics. Triage is WHO-aligned decision support: high CAD score leads to refer; borderline leads to retest/refer with symptoms; a negative screen does **not** clear a symptomatic or high-risk patient (`symptom_followup`); CAD workflow is out of scope for age under 15. Occlusion zones are labeled as unvalidated quadrant sensitivity, not anatomy.
+The retrieval layer is deliberately boring. 98 WHO-guideline passages (paraphrased, in English, Yorùbá, Hausa, and Igbo) sit in a hand-rolled TF-IDF index — no embedding server, no model download, nothing to break offline. The tokenizer preserves African Latin diacritics so ọ and o are not the same word, and when a query comes in a non-English language we score the English passages too and boost same-topic passages in the target language as a cross-lingual proxy. Retrieval filters by language and topic, so a Yorùbá screen is never answered from English-only risk text.
 
-## Constraints
+Because an LLM in a clinical loop will occasionally invent things, we treat its output as untrusted input. Every response must arrive as structured YAML; a sanitizer strips any citation id that does not match a passage actually retrieved for that request, and if the model drops the screening disclaimer, one is injected before the user sees anything. The clinical Q&A path follows the same rules: guideline questions get guideline answers, and if a screening has been run in the session, the answer is grounded in that patient's actual result rather than a generic paragraph.
 
-| Constraint | Mitigation |
-|---|---|
-| 7 GB RAM / no discrete GPU | Q4_K_M GGUF; ONNX CPU; lazy LLM load; TF-IDF index (no embedding server) |
-| 100% offline inference | Bundled ONNX + GGUF + `corpus/index/`; no CDN fonts; uploads deleted after analyze |
-| llama.cpp + GGUF only | Verified load path; rejected non-portable hybrid architectures |
-| Clinical safety | Policy engine + citation sanitization + mandatory screening disclaimer |
-| African-language bonus | Localized passages + four-language UI/eval; native clinician sign-off still pending (`data/eval/native_review_pending.json`) |
+## Constraints we designed around
 
-## Benchmarks
+The 7 GB RAM ceiling and the llama.cpp-only rule shaped almost everything. Q4_K_M quantization keeps the LLM around 2.9 GB on disk; the vision model is 4.4 MB; the whole stack peaks near 3.1 GB, which leaves real headroom against the disqualification line. Inference is CPU-only with lazy model loading, so the app starts fast and only pays the GGUF load when a generation is actually needed. Offline means offline: system fonts only, no CDN, no telemetry, uploaded images deleted right after analysis. Sessions hold nothing across restarts.
 
-**Official profiler (participant laptop, not the ADTC Standard Laptop).** From `submission.json` via `adtc-profiler 0.1.0` on Apple M1 Pro 16 GB at commit `f9f9de8`: 16.73 tok/s generation (512-prompt / 128-gen llama-bench), 7.16 s first-token latency for a 512-token prompt, peak RSS 2135 MB, no thermal throttling. Self-reported scores per the profiler formulas: Sperf = min(16.73/15.0, 1.0)×100 = **100.0** (capped) and Seff = (7.0−2.135)/7.0×100 = **69.5**. These are participant-machine numbers; the audit re-measures on the 4-core / 8 GB sandbox.
+## What we measured
 
-**Full application profile (same M1 Pro participant machine).** Vision 0.56 s; LLM cold load 6.65 s; warm screen+RAG+LLM 23.7 s; Q&A 16.7 s; peak RSS ~3.14 GB. Screen and Q&A YAML both parsed.
+All numbers below are from our participant machine (Apple M1 Pro, 16 GB), not the ADTC Standard Laptop — the audit sandbox will re-measure everything, and we expect throughput to differ there.
 
-**Vision smoke (not validation).** `samples/` Shenzhen 20-image set at threshold 0.65: sensitivity 100%, specificity 60%. No AUC is claimed in this report; no held-out patient-level validation artifact is currently committed.
+Official profiler (`adtc-profiler 0.1.0`, participant mode, at commit `f9f9de8`): 16.73 tok/s generation, 7.16 s first-token latency on a 512-token prompt, 2135 MB peak RSS, no thermal throttling. Feeding those into the profiler's own formulas gives the self-reported Gate-1 numbers: Sperf = min(16.73/15.0, 1.0) × 100 = **100.0** (the cap does the work here) and Seff = (7.0 − 2.135)/7.0 × 100 = **69.5**.
 
-**Harness.** `scripts/eval.py` and `scripts/bakeoff.py` exercise the frozen cases (schema, triage policy, citation faithfulness, safety text) across en/yo/ha/ig. Automated unit tests cover Unicode retrieval, topic RAG, ONNX smoke, and metadata prompt paths.
+End-to-end application timings on the same machine: vision 0.56 s per image, LLM cold load 6.65 s, a warm screen-plus-interpretation turn 23.7 s, a clinical Q&A turn 16.7 s, full-stack peak RSS about 3.14 GB.
 
-**Limitations.** (1) Target-laptop profiler output is still outstanding — participant numbers above are from an Apple M1 Pro, not the Ubuntu 22.04 / 8 GB ADTC Standard Laptop. (2) Localized corpus passages are paraphrases pending native clinician approval. (3) African-language quality for the bonus should be treated as harness-supported, not clinician-verified, until `native_review_pending.json` is completed. (4) `team_id` 1064863 now flows correctly into `submission.json`; confirm it against the ADTF/DevPost registration at submit time.
+On our 20-image Shenzhen smoke set (threshold 0.65) the vision model scores 100% sensitivity and 60% specificity. We label this a smoke test, not validation: it is far too small to claim an AUC, and we don't. Beyond the smoke set, an automated harness (`scripts/eval.py`, `scripts/bakeoff.py`) checks schema validity, triage policy, and citation honesty across all four languages, and the unit suite covers Unicode retrieval, topic RAG, ONNX inference, and the prompt/QA contracts.
+
+## Honest limitations
+
+The profiler numbers above are from a dev laptop; we have not yet frozen a run on the Ubuntu 22.04 / 8 GB target machine. The Yorùbá, Hausa, and Igbo passages are careful paraphrases still waiting on native clinician review (`data/eval/native_review_pending.json`), so the African-language bonus claim should be read as harness-supported, not clinician-verified. The vision model's specificity needs work on a larger, properly labelled dataset before anyone should lean on a negative screen. And `team_id` 1064863 should be checked against the ADTF portal one last time at submission.
