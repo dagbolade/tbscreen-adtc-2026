@@ -30,6 +30,8 @@ Official profiler (`adtc-profiler 0.1.0`, participant mode, at commit `f9f9de8`)
 
 End-to-end application timings on the same machine: vision 0.56 s per image, LLM cold load 6.65 s, a warm screen-plus-interpretation turn 23.7 s, a clinical Q&A turn 16.7 s, full-stack peak RSS about 3.14 GB.
 
+We also validated the whole stack inside an Ubuntu 22.04 container capped at 4 CPUs and 8 GB with swap disabled. The documented install path works there end to end (llama-cpp-python 0.3.30 compiles from source with build-essential and cmake; the pinned numpy and onnxruntime need Python 3.11+, so we used 3.12), all 19 unit tests pass, and a complete screen, reinterpret, and Q&A session finishes with peak RSS of 3.33 GB and zero swapping under the 8 GB cgroup. One caveat we want on the record: container throughput is not evidence of anything. A 4-thread llama-bench inside this virtualized environment reaches about 4 tok/s against 16.73 tok/s natively on the same physical machine, so we report the container run for compatibility and memory safety only, and the target-hardware throughput question stays open until the audit measures it.
+
 On our 20-image Shenzhen smoke set (threshold 0.65) the vision model scores 100% sensitivity and 60% specificity. We label this a smoke test, not validation: it is far too small to claim an AUC, and we don't. Beyond the smoke set, an automated harness (`scripts/eval.py`, `scripts/bakeoff.py`) checks schema validity, triage policy, and citation honesty across all four languages, and the unit suite covers Unicode retrieval, topic RAG, ONNX inference, and the prompt/QA contracts.
 
 ## Honest limitations

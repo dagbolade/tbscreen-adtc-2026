@@ -198,6 +198,8 @@ View the full eligibility rules at [adtc-2026.devpost.com/rules](https://adtc-20
 python -m venv .venv && source .venv/bin/activate
 # Linux (e.g. Ubuntu 22.04): sudo apt install -y build-essential cmake
 # (llama-cpp-python ships no manylinux wheels and compiles from source)
+# Ubuntu 22.04's system Python 3.10 has no wheels for the pinned numpy/onnxruntime:
+# install Python 3.12 first (e.g. from the deadsnakes PPA), then create the venv with it
 pip install -r requirements.txt
 bash download_model.sh
 python scripts/build_rag_index.py   # after corpus edits
