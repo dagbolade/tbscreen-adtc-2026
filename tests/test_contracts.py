@@ -53,7 +53,7 @@ class TestPromptContracts(unittest.TestCase):
         )
         self.assertIn("TB probability: 78.3%", prompt)
         self.assertIn("patient screening context", prompt.lower())
-        self.assertIn("personalize", prompt.lower())
+        self.assertIn("their own case", prompt.lower())
 
     def test_qa_prompt_without_screening_summary(self):
         prompt = core.qa_user_content("What is screening?", "[who-tb-screening-01] text", "English")
