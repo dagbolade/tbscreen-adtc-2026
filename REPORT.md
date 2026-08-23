@@ -1,10 +1,10 @@
-# TBScreen — Technical Report
+# TBScreen: Technical Report
 
 Team 1064863 · healthcare_medical · gemma-4-E2B-it-Q4_K_M (llama.cpp, GGUF Q4_K_M, ~2.6B effective)
 
 ## The problem
 
-A community health worker in a high-burden TB setting can often get a chest X-ray taken, but there is no radiologist to read it and no reliable internet to send it anywhere. Cloud-based clinical AI is useless in exactly the places that need it most. We built TBScreen to test a simple premise: a complete screening assistant — one that reads the X-ray, applies triage policy, explains itself in the patient's language, and answers follow-up questions — can run on a basic 8 GB laptop with the network cable unplugged.
+A community health worker in a high-burden TB setting can often get a chest X-ray taken, but there is no radiologist to read it and no reliable internet to send it anywhere. Cloud-based clinical AI is useless in exactly the places that need it most. We built TBScreen to test a simple premise: a complete screening assistant (one that reads the X-ray, applies triage policy, explains itself in the patient's language, and answers follow-up questions) can run on a basic 8 GB laptop with the network cable unplugged.
 
 To be clear about scope: TBScreen is screening decision support. It is not a diagnostic device, and every output it produces says so.
 
