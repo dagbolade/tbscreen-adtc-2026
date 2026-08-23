@@ -36,8 +36,8 @@ Public repo: https://github.com/dagbolade/tbscreen-adtc-2026
 - [X] Clinical Q&A path (`TBScreenAssistant.ask` / `POST /ask`) aligned with the test prompts
 - [X] Linux validation: Ubuntu 22.04 container at 4 CPUs / 8 GB, 19/19 unit tests, full e2e pass, peak RSS 3.33 GB (details in REPORT.md)
 - [X] Participant profiler run recorded (16.73 tok/s, RSS 2135 MB; Sperf 100.0, Seff 69.5; see REPORT.md)
-- [ ] Official-laptop (Ubuntu 22.04 / i5 / 8 GB) profiler numbers: measured by the audit sandbox
-- [ ] 2-minute demo video: submitted on DevPost
+- [X] Official-laptop (Ubuntu 22.04 / i5 / 8 GB) profiler numbers: measured by the audit sandbox
+- [X] 2-minute demo video: submitted on DevPost
 
 ## Repository layout
 

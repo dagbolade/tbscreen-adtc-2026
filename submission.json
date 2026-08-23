@@ -1,0 +1,79 @@
+{
+  "schema_version": "1.1.0",
+  "profiler_version": "adtc-profiler 0.1.0",
+  "submission": {
+    "team_id": "1064863",
+    "domain": "healthcare_medical",
+    "language_scope": [
+      "en",
+      "yo",
+      "ha",
+      "ig"
+    ],
+    "african_alpha_claim": true,
+    "budget_laptop_claim": true,
+    "submitter": {
+      "name": "David Agbolade",
+      "email": "dagbolade72@gmail.com",
+      "github_handle": "dagbolade"
+    },
+    "cross_disciplinary_pairing": {
+      "discipline": "computer_vision",
+      "load_bearing": true,
+      "description": "A quantized LLM interprets outputs from a MobileNetV3-Small ONNX chest X-ray TB screener, including optional 2x2 occlusion-sensitivity zone weights. The LLM generates clinical explanations, triage recommendations, and patient education grounded in WHO TB guidelines via offline TF-IDF RAG. The LLM requires the vision model output to produce its interpretation — the integration is structurally load-bearing. A separate grounded Q&A path serves guideline questions without an image."
+    },
+    "test_prompts": [
+      {
+        "prompt_id": "tp_001",
+        "prompt": "A chest X-ray screening result shows a TB probability of 78.3%. The patient is a 34-year-old male presenting with a persistent cough for 3 weeks. Explain the screening result to a community health worker, recommend next steps for triage, and provide a brief patient-friendly explanation."
+      },
+      {
+        "prompt_id": "tp_002",
+        "prompt": "A community health worker in a rural clinic asks: What are the key differences between a positive TB screening result and a confirmed TB diagnosis? How should each be managed at a primary health centre with limited diagnostic equipment? Include guidance on when to refer to a higher-level facility."
+      }
+    ],
+    "model": {
+      "name": "gemma-4-E2B-it-Q4_K_M",
+      "runtime": "llama.cpp",
+      "quantization": "GGUF Q4_K_M",
+      "parameters_estimate": "~2.6B effective (E2B)",
+      "packaging": "binary_bundle"
+    }
+  },
+  "environment": {
+    "measured_on": "participant_laptop",
+    "cpu_model": "aarch64",
+    "ram_gb": 7.7,
+    "gpu": "none",
+    "os": "Ubuntu 22.04.5 LTS"
+  },
+  "throughput": {
+    "tokens_per_second_generation": 2.62,
+    "first_token_latency_ms": 107486.43,
+    "prompt_tokens": 512,
+    "generated_tokens": 128
+  },
+  "memory": {
+    "peak_rss_mb": 3215.15,
+    "steady_state_rss_mb": 3088.18,
+    "peak_vms_mb": 3928.79
+  },
+  "accuracy": [],
+  "cpu_thermal": {
+    "cpu_percent_p99": 73.2,
+    "core_temp_c_peak": null,
+    "throttled": false
+  },
+  "reproducibility": {
+    "git_commit_sha": "000000000000",
+    "docker_image_digest": "unknown",
+    "random_seed": 42
+  },
+  "model_info": {
+    "params_count": 4647450147,
+    "context_length": 131072,
+    "architecture": "gemma4",
+    "claimed_params_estimate": "~2.6B effective (E2B)",
+    "params_match": null
+  }
+}
