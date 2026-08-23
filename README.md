@@ -1,198 +1,64 @@
-# ADTC 2026 — Submission Template
+# TBScreen
 
-This is the official template repository for the **Africa Deep Tech Challenge 2026** Laptop LLM track.
+Offline AI-assisted chest X-ray TB screening with WHO-guideline Q&A in English, Yorùbá, Hausa, and Igbo. A health worker uploads a CXR, gets a TB probability, a deterministic WHO-aligned triage decision, a cited plain-language interpretation, and a clinical Q&A chat, all on an 8 GB laptop with zero network access.
 
-Fork this repository, fill in the required files, and submit your repository URL via [adtc-2026.devpost.com](https://adtc-2026.devpost.com).
-
----
-
-## ✅ Submission Checklist
-
-Before submitting, confirm every item:
-
-- [x] Your repository is **public** on GitHub *(verify before DevPost submit)*
-- [x] `metadata.json` is fully filled in — no placeholder values remain *(replace `team_id` with ADTF portal ID if different)*
-- [x] `metadata.json` contains exactly **2 test prompts** in the `test_prompts` array, written for your chosen domain
-- [x] `download_model.sh` successfully downloads your model to `model/`
-- [x] The downloaded file is a valid **GGUF format** (`.gguf`) weight file
-- [x] `model/*.gguf` is listed in `.gitignore` — do **not** commit large weight files
-- [x] `REPORT.md` is filled in with your technical writeup
-- [x] Running `bash download_model.sh` completes without errors
-- [x] Your model runs entirely **offline** — zero external network calls during inference (TF-IDF RAG; no CDN fonts)
-
-### TBScreen Gate-1 extras
-- [x] Offline TF-IDF index at `corpus/index/`
-- [x] Vision zone activations wired into LLM prompts
-- [x] Clinical Q&A path (`TBScreenAssistant.ask` / `POST /ask`) aligned with test prompts
-- [ ] `adtc-profiler` numbers frozen on Ubuntu 22.04 / 8 GB target laptop
-- [ ] 2-minute demo video recorded
-- [ ] Confirm `team_id` matches ADTF portal registration
+**ADTC 2026 Laptop LLM track · Team 1064863 · healthcare_medical**
+Public repo: https://github.com/dagbolade/tbscreen-adtc-2026
 
 ---
 
-## 📁 Required File Structure
+## Submission facts
+
+`metadata.json` is the source of truth; its final values:
+
+| Field                          | Value                                                                                                                                                  |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `team_id`                    | `1064863`                                                                                                                                            |
+| `domain`                     | `healthcare_medical`                                                                                                                                 |
+| `language_scope`             | `en`, `yo`, `ha`, `ig`                                                                                                                         |
+| `african_alpha_claim`        | `true` (four-language UI + localized corpus)                                                                                                         |
+| `budget_laptop_claim`        | `true` (peak RSS ~3.1-3.3 GB vs 7 GB budget)                                                                                                         |
+| `submitter`                  | David Agbolade · dagbolade72@gmail.com · github.com/dagbolade                                                                                        |
+| `cross_disciplinary_pairing` | `computer_vision`, load-bearing (MobileNetV3 ONNX screener feeds the LLM pipeline)                                                                   |
+| `test_prompts`               | exactly 2:`tp_001` (explain a 78.3% CXR screen for a symptomatic 34-year-old) and `tp_002` (positive screen vs confirmed diagnosis at a rural PHC) |
+| `model`                      | `gemma-4-E2B-it-Q4_K_M`, runtime `llama.cpp`, quantization `GGUF Q4_K_M`, ~2.6B effective, packaging `binary_bundle`                           |
+| `_runtime.model_path`        | `model/gemma-4-E2B-it-Q4_K_M.gguf` (downloaded by `download_model.sh`, never committed)                                                            |
+
+## Checklist status
+
+- [X] Repository public on GitHub
+- [X] `metadata.json` fully filled, no placeholders, exactly 2 test prompts
+- [X] `download_model.sh` idempotent, credential-free, pinned SHA-256 `9378bc…8672d`, public Hugging Face URL
+- [X] Valid GGUF weights; `model/` and `*.gguf` gitignored
+- [X] `REPORT.md` technical writeup with measured numbers
+- [X] 100% offline inference: local ONNX + GGUF + TF-IDF index, system fonts only, no CDN
+- [X] Offline TF-IDF index committed at `corpus/index/`
+- [X] Clinical Q&A path (`TBScreenAssistant.ask` / `POST /ask`) aligned with the test prompts
+- [X] Linux validation: Ubuntu 22.04 container at 4 CPUs / 8 GB, 19/19 unit tests, full e2e pass, peak RSS 3.33 GB (details in REPORT.md)
+- [X] Participant profiler run recorded (16.73 tok/s, RSS 2135 MB; Sperf 100.0, Seff 69.5; see REPORT.md)
+- [ ] Official-laptop (Ubuntu 22.04 / i5 / 8 GB) profiler numbers: measured by the audit sandbox
+- [ ] 2-minute demo video: submitted on DevPost
+
+## Repository layout
 
 ```
-your-submission/
-├── metadata.json          ← Required. Team, model, and test prompt metadata.
-├── download_model.sh      ← Required. Downloads your .gguf model weight file.
-├── REPORT.md              ← Required. Technical writeup (problem, design, benchmarks).
-├── model/
-│   └── your-model.gguf   ← Downloaded by the script above. Do NOT commit.
-└── .gitignore             ← Must exclude *.gguf and model/ from version control.
+tbscreen-adtc-2026/
+├── metadata.json              Team/model/prompt metadata (final)
+├── download_model.sh          Downloads the GGUF to model/ (SHA-pinned)
+├── REPORT.md                  Technical writeup
+├── requirements.txt           Pinned deps (Python 3.11+ required on Linux)
+├── src/tbscreen/              Flask app, pipeline, RAG, prompts, sanitizers
+├── vision/                    MobileNetV3-Small ONNX screener + weights
+├── corpus/                    98 WHO-guideline passages (en/yo/ha/ig) + TF-IDF index
+├── samples/                   20 Shenzhen CXRs for smoke tests
+├── scripts/                   build_rag_index, eval, bakeoff
+├── tests/                     contracts, retrieval policy, e2e pipeline
+└── model/                     GGUF target dir (gitignored, populated by script)
 ```
 
 ---
 
-## 📝 metadata.json
-
-Fill in every field. No field should remain at its placeholder value.
-
-```json
-{
-  "team_id": "your-team-id",
-  "domain": "coding_assistants",
-  "language_scope": ["en"],
-  "african_alpha_claim": false,
-  "budget_laptop_claim": true,
-  "submitter": {
-    "name": "your-name",
-    "email": "your-email@domain.com",
-    "github_handle": "your-github"
-  },
-  "cross_disciplinary_pairing": {
-    "discipline": "education",
-    "load_bearing": true,
-    "description": "Brief description of how your model serves a real-world domain."
-  },
-  "test_prompts": [
-    {
-      "prompt_id": "tp_001",
-      "prompt": "Your first test prompt, written for your chosen domain."
-    },
-    {
-      "prompt_id": "tp_002",
-      "prompt": "Your second test prompt, written for your chosen domain."
-    }
-  ],
-  "model": {
-    "name": "YourModel-Q4_K_M",
-    "runtime": "llama.cpp",
-    "quantization": "GGUF Q4_K_M",
-    "parameters_estimate": "1.1B",
-    "packaging": "binary_bundle"
-  },
-  "_runtime": {
-    "model_path": "model/your-model.gguf"
-  }
-}
-```
-
-### Field Reference
-
-| Field | Required | Description |
-|---|---|---|
-| `team_id` | ✅ | Your unique team ID as registered on the ADTF portal |
-| `domain` | ✅ | Your challenge track. One of: `math_scientific_reasoning`, `healthcare_medical`, `agriculture`, `creative_writing`, `coding_assistants`, `corporate_enterprise`, `autonomous_ai_agents` |
-| `language_scope` | ✅ | Array of BCP-47 language codes. Must include at least one. |
-| `african_alpha_claim` | ✅ | `true` only if claiming the African Use Case Bonus |
-| `budget_laptop_claim` | ✅ | Must be `true` — all submissions target the 8 GB RAM laptop profile |
-| `submitter.name` | ✅ | Full name of the team member submitting the run |
-| `submitter.email` | ✅ | Valid email address linked to the registered team |
-| `submitter.github_handle` | ✅ | Verifiable GitHub username |
-| `cross_disciplinary_pairing.discipline` | ✅ | The deep-tech discipline your model serves |
-| `cross_disciplinary_pairing.load_bearing` | ✅ | `true` if the pairing is integral to the submission, not cosmetic |
-| `test_prompts` | ✅ | **Exactly 2 prompts** in your chosen domain. Organizers will add 2 hidden prompts to test for overfitting. |
-| `model.runtime` | ✅ | Must be `llama.cpp`. No other runtime is accepted. |
-| `model.quantization` | ✅ | Must be a GGUF quantization format (e.g. `GGUF Q4_K_M`, `GGUF Q5_K_M`) |
-| `model.parameters_estimate` | ✅ | Approximate parameter count (e.g. `135M`, `1.1B`, `7B`) |
-| `model.packaging` | ✅ | How the model is packaged. One of: `docker_image`, `docker_build_from_repo`, `binary_bundle` |
-| `_runtime.model_path` | ✅ | Relative path from repo root to your `.gguf` file (e.g. `model/my-model.gguf`) |
-
----
-
-## 📥 download_model.sh
-
-This script **must** download your model weight file to the `model/` directory.
-
-Rules:
-- Must be idempotent — safe to run multiple times without re-downloading.
-- Must work without any credentials — your weights must be publicly accessible.
-- The downloaded file path must exactly match `_runtime.model_path` in `metadata.json`.
-
-Recommended hosting options for your weights:
-- [Hugging Face](https://huggingface.co) — public model repos (free, best for GGUF files)
-- GitHub Release Assets — attach the `.gguf` file to a GitHub Release
-- Any stable public URL (GCS public bucket, S3 public object, etc.)
-
----
-
-## 📄 REPORT.md
-
-Your technical writeup. Judges and the LLM-based audit system will read this to understand your submission. Cover:
-
-1. **Problem** — What problem are you solving? Who is the target user in an African context?
-2. **Design Decisions** — What model did you start from? Why that quantization level? What alternatives did you evaluate?
-3. **Constraints** — What hardware, connectivity, or data constraints shaped your approach?
-4. **Benchmarks** — What inference speed and memory numbers did you observe on your development machine?
-
-Keep it factual and specific. One to three pages is ideal.
-
----
-
-## 🧪 Local Testing
-
-The ADTC profiler is open source. Install it directly from the official repository:
-
-```bash
-pip install "git+https://github.com/Africa-Deep-Tech-Foundation/adtc-profiler.git"
-```
-
-Then run a local smoke test before submitting:
-
-```bash
-# 1. Download your weights
-bash download_model.sh
-
-# 2. Run the profiler in participant mode
-adtc-profiler run \
-  --submission . \
-  --mode participant \
-  --output submission.json \
-  --skip-accuracy
-
-# 3. Review your report
-cat submission.json
-```
-
-A valid run produces a `submission.json` with `"measured_on": "participant_laptop"`.
-
-The profiler source code, including the thermal monitoring logic and scoring formulas, is publicly readable at:
-[github.com/Africa-Deep-Tech-Foundation/adtc-profiler](https://github.com/Africa-Deep-Tech-Foundation/adtc-profiler)
-
----
-
-## ⚠️ Rules
-
-1. **Public repository required.** Your repository must be public at the time of evaluation.
-2. **No model weights in git.** Add `*.gguf` and `model/` to your `.gitignore`. The evaluator downloads weights fresh via `download_model.sh`.
-3. **100% offline during evaluation.** Your model must run with zero external network dependencies during our testing window. `download_model.sh` runs before the profiler starts, but once profiling begins, no outbound requests are permitted.
-4. **llama.cpp only.** All models must use GGUF weights and run through `llama.cpp`. No other runtime is supported by our evaluation framework.
-5. **8 GB RAM limit.** Your model must run within the standard laptop profile (4 vCPU, 8 GB RAM, integrated GPU only). Out-of-memory errors during evaluation result in automatic disqualification.
-6. **No size restriction.** There is no parameter count or file size cap — but the 8 GB RAM constraint is strict. Plan your quantization level accordingly.
-7. **Two test prompts required.** Your `metadata.json` must include exactly 2 prompts in the `test_prompts` array. Organizers will generate 2 additional hidden prompts within your domain. All 4 are used for scoring.
-
----
-
-## 🆘 Support
-
-Open an issue in this repository or contact the ADTF team at challenge@africadeeptech.org.
-
-View the full eligibility rules at [adtc-2026.devpost.com/rules](https://adtc-2026.devpost.com/rules).
-
----
-
-## TBScreen — Run Instructions
+## Run instructions
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
@@ -216,9 +82,29 @@ python -m unittest tests.test_retrieval_policy tests.test_contracts
 
 Gate 1 deadline: **August 25, 2026**. Official profiler target: Ubuntu 22.04 / 8 GB ADTC Standard Laptop.
 
+## Local profiler (participant mode)
+
+```bash
+pip install "git+https://github.com/Africa-Deep-Tech-Foundation/adtc-profiler.git"
+# The profiler needs llama-bench on PATH:
+#   macOS: brew install llama.cpp    Linux: build llama.cpp (the source is vendored
+#   inside the llama-cpp-python sdist, so the exact runtime version can be rebuilt)
+bash download_model.sh
+adtc-profiler run \
+  --submission . \
+  --mode participant \
+  --output submission.json \
+  --skip-accuracy
+```
+
+A valid run produces `submission.json` with `"measured_on": "participant_laptop"`. Our recorded run: 16.73 tok/s generation, 2135 MB peak RSS, no throttling (Apple M1 Pro participant machine; REPORT.md explains what does and does not transfer to the target laptop).
+
+## Rules honored
+
+Public repo, no weights in git (the evaluator downloads weights via the script), 100% offline during evaluation, llama.cpp-only GGUF runtime, within the 8 GB RAM profile (4 vCPU, integrated GPU), exactly 2 test prompts. Full rules and eligibility: [adtc-2026.devpost.com/rules](https://adtc-2026.devpost.com/rules). Support: [challenge@africadeeptech.org](mailto:challenge@africadeeptech.org).
+
 ---
 
-## 📄 License
+## License
 
-This template is licensed under the terms of the [GNU GPL v3 License](LICENSE).
-
+This project is licensed under the terms of the [GNU GPL v3 License](LICENSE).
