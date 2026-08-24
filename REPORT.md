@@ -1,6 +1,6 @@
 # TBScreen: Technical Report
 
-Team 1064863 · healthcare_medical · gemma-4-E2B-it-Q4_K_M (llama.cpp, GGUF Q4_K_M, ~2.6B effective)
+Team tbscreen (DevPost project ID) · healthcare_medical · gemma-4-E2B-it-Q4_K_M (llama.cpp, GGUF Q4_K_M, ~2.6B effective)
 
 ## The problem
 

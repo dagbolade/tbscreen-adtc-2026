@@ -2,7 +2,7 @@
 
 Offline AI-assisted chest X-ray TB screening with WHO-guideline Q&A in English, Yorùbá, Hausa, and Igbo. A health worker uploads a CXR, gets a TB probability, a deterministic WHO-aligned triage decision, a cited plain-language interpretation, and a clinical Q&A chat, all on an 8 GB laptop with zero network access.
 
-**ADTC 2026 Laptop LLM track · Team 1064863 · healthcare_medical**
+**ADTC 2026 Laptop LLM track · Team tbscreen · healthcare_medical**
 Public repo: https://github.com/dagbolade/tbscreen-adtc-2026
 
 ---
@@ -13,7 +13,7 @@ Public repo: https://github.com/dagbolade/tbscreen-adtc-2026
 
 | Field                          | Value                                                                                                                                                  |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `team_id`                    | `1064863`                                                                                                                                            |
+| `team_id`                    | `tbscreen` (the DevPost project ID)                                                                                                                                            |
 | `domain`                     | `healthcare_medical`                                                                                                                                 |
 | `language_scope`             | `en`, `yo`, `ha`, `ig`                                                                                                                         |
 | `african_alpha_claim`        | `true` (four-language UI + localized corpus)                                                                                                         |
